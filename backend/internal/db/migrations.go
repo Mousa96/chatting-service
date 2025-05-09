@@ -25,4 +25,4 @@ func RunMigrationsWithPath(config *Config, migrationsPath string) error {
 	}
 
 	return nil
-} 
+}

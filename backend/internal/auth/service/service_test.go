@@ -14,9 +14,9 @@ func TestRegister(t *testing.T) {
 	authService := NewAuthService(repo, jwtKey)
 
 	tests := []struct {
-		name          string
-		request       *models.CreateUserRequest
-		expectedErr   bool
+		name        string
+		request     *models.CreateUserRequest
+		expectedErr bool
 	}{
 		{
 			name: "Valid registration",
@@ -66,12 +66,14 @@ func TestLogin(t *testing.T) {
 		Username: "testuser",
 		Password: "testpass123",
 	}
-	authService.Register(validUser)
+	if _, err := authService.Register(validUser); err != nil {
+		t.Fatalf("Failed to register test user: %v", err)
+	}
 
 	tests := []struct {
-		name          string
-		request       *models.LoginRequest
-		expectedErr   bool
+		name        string
+		request     *models.LoginRequest
+		expectedErr bool
 	}{
 		{
 			name: "Valid login",
@@ -114,4 +116,4 @@ func TestLogin(t *testing.T) {
 			}
 		})
 	}
-} 
+}

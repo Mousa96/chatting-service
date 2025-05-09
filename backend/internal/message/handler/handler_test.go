@@ -14,20 +14,23 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+type contextKey string
+const userIDKey = contextKey("user_id")
+
 func TestSendMessage(t *testing.T) {
 	repo := repository.NewTestMessageRepository()
 	messageService := service.NewMessageService(repo)
 	handler := NewMessageHandler(messageService)
 
 	tests := []struct {
-		name           string
-		userID         int
-		request        models.CreateMessageRequest
-		expectedCode   int
+		name         string
+		userID       int
+		request      models.CreateMessageRequest
+		expectedCode int
 	}{
 		{
-			name:    "Valid message",
-			userID:  1,
+			name:   "Valid message",
+			userID: 1,
 			request: models.CreateMessageRequest{
 				ReceiverID: 2,
 				Content:    "Hello!",
@@ -35,8 +38,8 @@ func TestSendMessage(t *testing.T) {
 			expectedCode: http.StatusOK,
 		},
 		{
-			name:    "Message with media",
-			userID:  1,
+			name:   "Message with media",
+			userID: 1,
 			request: models.CreateMessageRequest{
 				ReceiverID: 2,
 				Content:    "Check this out",
@@ -50,9 +53,9 @@ func TestSendMessage(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			body, _ := json.Marshal(tt.request)
 			req := httptest.NewRequest(http.MethodPost, "/api/messages", bytes.NewBuffer(body))
-			
+
 			// Add user_id to context
-			ctx := context.WithValue(req.Context(), "user_id", tt.userID)
+			ctx := context.WithValue(req.Context(), userIDKey, tt.userID)
 			req = req.WithContext(ctx)
 
 			rr := httptest.NewRecorder()
@@ -93,45 +96,47 @@ func TestGetConversation(t *testing.T) {
 	}
 
 	for _, msg := range messages {
-		repo.Create(&msg)
+		if err := repo.Create(&msg); err != nil {
+			t.Fatalf("Failed to create test message: %v", err)
+		}
 	}
 
 	tests := []struct {
-		name           string
-		userID         int
-		otherUserID    string
-		expectedCode   int
-		expectedMsgs   int
+		name         string
+		userID       int
+		otherUserID  string
+		expectedCode int
+		expectedMsgs int
 	}{
 		{
-			name:          "Valid conversation",
-			userID:        1,
-			otherUserID:   "2",
-			expectedCode:  http.StatusOK,
-			expectedMsgs:  2,
+			name:         "Valid conversation",
+			userID:       1,
+			otherUserID:  "2",
+			expectedCode: http.StatusOK,
+			expectedMsgs: 2,
 		},
 		{
-			name:          "Invalid user ID",
-			userID:        1,
-			otherUserID:   "invalid",
-			expectedCode:  http.StatusBadRequest,
-			expectedMsgs:  0,
+			name:         "Invalid user ID",
+			userID:       1,
+			otherUserID:  "invalid",
+			expectedCode: http.StatusBadRequest,
+			expectedMsgs: 0,
 		},
 		{
-			name:          "Empty conversation",
-			userID:        1,
-			otherUserID:   "3",
-			expectedCode:  http.StatusOK,
-			expectedMsgs:  0,
+			name:         "Empty conversation",
+			userID:       1,
+			otherUserID:  "3",
+			expectedCode: http.StatusOK,
+			expectedMsgs: 0,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/api/messages/conversation?user_id="+tt.otherUserID, nil)
-			
+
 			// Add user_id to context
-			ctx := context.WithValue(req.Context(), "user_id", tt.userID)
+			ctx := context.WithValue(req.Context(), userIDKey, tt.userID)
 			req = req.WithContext(ctx)
 
 			rr := httptest.NewRecorder()
@@ -147,4 +152,4 @@ func TestGetConversation(t *testing.T) {
 			}
 		})
 	}
-} 
+}

@@ -1,3 +1,4 @@
+// Package repository provides test implementations of the Repository interface
 package repository
 
 import (
@@ -7,12 +8,14 @@ import (
 	"github.com/Mousa96/chatting-service/internal/message/models"
 )
 
+// TestMessageRepository provides an in-memory implementation of Repository for testing
 type TestMessageRepository struct {
 	messages map[int]*models.Message
 	mu       sync.RWMutex
 	nextID   int
 }
 
+// NewTestMessageRepository creates a new instance of TestMessageRepository
 func NewTestMessageRepository() *TestMessageRepository {
 	return &TestMessageRepository{
 		messages: make(map[int]*models.Message),
@@ -45,4 +48,4 @@ func (r *TestMessageRepository) GetConversation(userID1, userID2 int) ([]models.
 	}
 
 	return conversation, nil
-} 
+}

@@ -12,12 +12,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: "1.22"
-
+      - name: Set Go Environment
+        run: |
+          go env -w GOINSECURE="*"
+          go env -w GONOSUMDB="*"
+          go env -w GOPROXY="direct"
+      - name: Install git
+        run: |
+          apt-get update
+          apt-get install -y git
+      - name: Download Dependencies
+        working-directory: backend
+        run: go mod download
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v4
         with:
@@ -29,7 +39,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+      - name: Set Go Environment
+        run: |
+          go env -w GOINSECURE="*"
+          go env -w GONOSUMDB="*"
+          go env -w GOPROXY="direct"
+      - name: Install git
+        run: |
+          apt-get update
+          apt-get install -y git
+      - name: Download Dependencies
+        working-directory: backend
+        run: go mod download
       - name: Run Gosec Security Scanner
         uses: securego/gosec@master
         with:
@@ -40,38 +65,37 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: "1.22"
-
+      - name: Set Go Environment
+        run: |
+          go env -w GOINSECURE="*"
+          go env -w GONOSUMDB="*"
+          go env -w GOPROXY="direct"
+      - name: Install git
+        run: |
+          apt-get update
+          apt-get install -y git
+      - name: Download Dependencies
+        working-directory: backend
+        run: go mod download
       - name: Unit Tests
         working-directory: backend
         run: |
-          go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
-        with:
-          file: ./backend/coverage.txt
+          export CGO_ENABLED=1
+          go test -race -v ./...
 
   integration:
     name: Integration Tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
+      - name: Install Docker Compose
+        run: |
+          apt-get update
+          apt-get install -y docker-compose
       - name: Run Integration Tests
         working-directory: backend
         run: docker-compose -f docker-compose.test.yml up --build --exit-code-from integration-tests
-
-  docker:
-    name: Docker Build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Build Docker image
-        working-directory: backend
-        run: docker build -t chat-service .

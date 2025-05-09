@@ -1,8 +1,10 @@
+// Package main is the entry point for the chat service application
 package main
 
 import (
 	"log"
 	"net/http"
+	"time"
 
 	authHandler "github.com/Mousa96/chatting-service/internal/auth/handler"
 	authRepo "github.com/Mousa96/chatting-service/internal/auth/repository"
@@ -35,7 +37,11 @@ func main() {
 	if err != nil {
 		log.Fatal("Could not initialize database connection:", err)
 	}
-	defer database.Close()
+	defer func() {
+		if err := database.Close(); err != nil {
+			log.Printf("Error closing database: %v", err)
+		}
+	}()
 
 	log.Println("Successfully connected to database")
 
@@ -45,12 +51,12 @@ func main() {
 
 	// Initialize services
 	jwtKey := []byte("your-secret-key") // In production, use environment variable
-	var authSvc authService.Service = authService.NewAuthService(userRepo, jwtKey)
-	var messageSvc msgService.Service = msgService.NewMessageService(messageRepo)
+	authSvc := authService.NewAuthService(userRepo, jwtKey)
+	messageSvc := msgService.NewMessageService(messageRepo)
 
 	// Initialize handlers
-	var authHdlr authHandler.Handler = authHandler.NewAuthHandler(authSvc)
-	var messageHdlr msgHandler.Handler = msgHandler.NewMessageHandler(messageSvc)
+	authHdlr := authHandler.NewAuthHandler(authSvc)
+	messageHdlr := msgHandler.NewMessageHandler(messageSvc)
 
 	// Initialize middleware
 	authMiddleware := middleware.AuthMiddleware(jwtKey)
@@ -59,9 +65,10 @@ func main() {
 	mux := http.NewServeMux()
 
 	// Public routes
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
+		if _, err := w.Write([]byte("OK")); err != nil {
+			log.Printf("Error writing response: %v", err)
+		}
 	})
 	mux.HandleFunc("/api/auth/register", authHdlr.Register)
 	mux.HandleFunc("/api/auth/login", authHdlr.Login)
@@ -76,8 +83,18 @@ func main() {
 	mux.Handle("/api/messages/", authMiddleware(messageMux)) // Note the trailing slash
 
 	port := ":8080"
+
+	// Create a server with timeouts
+	srv := &http.Server{
+		Addr:         port,
+		Handler:      mux,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+
 	log.Printf("Server starting on %s", port)
-	if err := http.ListenAndServe(port, mux); err != nil {
+	if err := srv.ListenAndServe(); err != nil {
 		log.Fatal("Server failed to start:", err)
 	}
-} 
+}

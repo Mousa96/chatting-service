@@ -1,3 +1,4 @@
+// Package handler provides HTTP handlers for authentication operations
 package handler
 
 import (
@@ -12,6 +13,7 @@ func NewAuthHandler(authService service.Service) Handler {
 	return &AuthHandler{authService: authService}
 }
 
+// AuthHandler implements the authentication HTTP handlers
 type AuthHandler struct {
 	authService service.Service
 }
@@ -30,7 +32,10 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 }
 
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
@@ -47,5 +52,8 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
-} 
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		return
+	}
+}

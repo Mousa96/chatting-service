@@ -13,13 +13,13 @@ func TestSendMessage(t *testing.T) {
 	messageService := NewMessageService(repo)
 
 	tests := []struct {
-		name          string
-		senderID     int
-		request      *models.CreateMessageRequest
-		expectedErr  bool
+		name        string
+		senderID    int
+		request     *models.CreateMessageRequest
+		expectedErr bool
 	}{
 		{
-			name:      "Valid message",
+			name:     "Valid message",
 			senderID: 1,
 			request: &models.CreateMessageRequest{
 				ReceiverID: 2,
@@ -28,7 +28,7 @@ func TestSendMessage(t *testing.T) {
 			expectedErr: false,
 		},
 		{
-			name:      "Message with media",
+			name:     "Message with media",
 			senderID: 1,
 			request: &models.CreateMessageRequest{
 				ReceiverID: 2,
@@ -42,7 +42,7 @@ func TestSendMessage(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			msg, err := messageService.SendMessage(tt.senderID, tt.request)
-			
+
 			if tt.expectedErr {
 				assert.Error(t, err)
 				assert.Nil(t, msg)
@@ -84,29 +84,31 @@ func TestGetConversation(t *testing.T) {
 	}
 
 	for _, msg := range messages {
-		repo.Create(&msg)
+		if err := repo.Create(&msg); err != nil {
+			t.Fatalf("Failed to create test message: %v", err)
+		}
 	}
 
 	tests := []struct {
-		name          string
-		userID1      int
-		userID2      int
-		expectedLen  int
+		name        string
+		userID1     int
+		userID2     int
+		expectedLen int
 	}{
 		{
-			name:         "Get conversation between user 1 and 2",
+			name:        "Get conversation between user 1 and 2",
 			userID1:     1,
 			userID2:     2,
 			expectedLen: 2,
 		},
 		{
-			name:         "Get conversation between user 1 and 3",
+			name:        "Get conversation between user 1 and 3",
 			userID1:     1,
 			userID2:     3,
 			expectedLen: 1,
 		},
 		{
-			name:         "Get empty conversation",
+			name:        "Get empty conversation",
 			userID1:     2,
 			userID2:     3,
 			expectedLen: 0,
@@ -116,16 +118,16 @@ func TestGetConversation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			messages, err := messageService.GetConversation(tt.userID1, tt.userID2)
-			
+
 			assert.NoError(t, err)
 			assert.Len(t, messages, tt.expectedLen)
 
 			for _, msg := range messages {
-				assert.True(t, 
+				assert.True(t,
 					(msg.SenderID == tt.userID1 && msg.ReceiverID == tt.userID2) ||
-					(msg.SenderID == tt.userID2 && msg.ReceiverID == tt.userID1),
+						(msg.SenderID == tt.userID2 && msg.ReceiverID == tt.userID1),
 				)
 			}
 		})
 	}
-} 
+}

@@ -1,3 +1,4 @@
+// Package integration provides end-to-end testing for the chat service
 package integration
 
 import (
@@ -46,7 +47,9 @@ func TestMain(m *testing.M) {
 	code := m.Run()
 
 	// Cleanup: Close connection before dropping tables
-	testDB.Close()
+	if err := testDB.Close(); err != nil {
+		log.Printf("Error closing test DB: %v", err)
+	}
 
 	// Clean up database by truncating all tables
 	cleanupDB := func() error {
@@ -54,7 +57,11 @@ func TestMain(m *testing.M) {
 		if err != nil {
 			return err
 		}
-		defer db.Close()
+		defer func() {
+			if err := db.Close(); err != nil {
+				log.Printf("Error closing DB: %v", err)
+			}
+		}()
 
 		// Truncate all tables in reverse order of dependencies
 		_, err = db.Exec(`
@@ -95,4 +102,4 @@ func setupTestServer(db *sql.DB) *http.ServeMux {
 	mux.Handle("/api/messages/conversation", authMiddleware(http.HandlerFunc(messageHdlr.GetConversation)))
 
 	return mux
-} 
+}

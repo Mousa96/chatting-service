@@ -1,3 +1,4 @@
+// Package service implements the authentication business logic
 package service
 
 import (
@@ -10,16 +11,18 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+// AuthService provides the implementation of the Service interface
+type AuthService struct {
+	userRepo repository.Repository
+	jwtKey   []byte
+}
+
+// NewAuthService creates a new AuthService instance
 func NewAuthService(userRepo repository.Repository, jwtKey []byte) Service {
 	return &AuthService{
 		userRepo: userRepo,
 		jwtKey:   jwtKey,
 	}
-}
-
-type AuthService struct {
-	userRepo repository.Repository
-	jwtKey   []byte
 }
 
 func (s *AuthService) Register(req *models.CreateUserRequest) (*models.AuthResponse, error) {
@@ -77,4 +80,4 @@ func (s *AuthService) generateToken(user *models.User) (string, error) {
 	})
 
 	return token.SignedString(s.jwtKey)
-} 
+}

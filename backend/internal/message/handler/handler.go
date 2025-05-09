@@ -1,3 +1,4 @@
+// Package handler implements the HTTP handlers for message operations
 package handler
 
 import (
@@ -9,12 +10,14 @@ import (
 	"github.com/Mousa96/chatting-service/internal/message/service"
 )
 
-func NewMessageHandler(messageService service.Service) Handler {
-	return &MessageHandler{messageService: messageService}
-}
-
+// MessageHandler provides the implementation of the Handler interface
 type MessageHandler struct {
 	messageService service.Service
+}
+
+// NewMessageHandler creates a new MessageHandler instance
+func NewMessageHandler(messageService service.Service) Handler {
+	return &MessageHandler{messageService: messageService}
 }
 
 func (h *MessageHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
@@ -33,7 +36,10 @@ func (h *MessageHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(msg)
+	if err := json.NewEncoder(w).Encode(msg); err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		return
+	}
 }
 
 func (h *MessageHandler) GetConversation(w http.ResponseWriter, r *http.Request) {
@@ -53,5 +59,8 @@ func (h *MessageHandler) GetConversation(w http.ResponseWriter, r *http.Request)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(messages)
-} 
+	if err := json.NewEncoder(w).Encode(messages); err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		return
+	}
+}

@@ -1,3 +1,4 @@
+// Package service implements the messaging business logic
 package service
 
 import (
@@ -5,12 +6,14 @@ import (
 	"github.com/Mousa96/chatting-service/internal/message/repository"
 )
 
-func NewMessageService(messageRepo repository.Repository) Service {
-	return &MessageService{messageRepo: messageRepo}
-}
-
+// MessageService provides the implementation of the Service interface
 type MessageService struct {
 	messageRepo repository.Repository
+}
+
+// NewMessageService creates a new MessageService instance
+func NewMessageService(messageRepo repository.Repository) Service {
+	return &MessageService{messageRepo: messageRepo}
 }
 
 func (s *MessageService) SendMessage(senderID int, req *models.CreateMessageRequest) (*models.Message, error) {
@@ -30,4 +33,4 @@ func (s *MessageService) SendMessage(senderID int, req *models.CreateMessageRequ
 
 func (s *MessageService) GetConversation(userID1, userID2 int) ([]models.Message, error) {
 	return s.messageRepo.GetConversation(userID1, userID2)
-} 
+}

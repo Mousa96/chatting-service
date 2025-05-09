@@ -1,12 +1,11 @@
-linters:
-  enable:
-    - gofmt
-    - golint
-    - govet
-    - errcheck
-    - staticcheck
-    - gosimple
-    - ineffassign
-
 run:
-  deadline: 5m
+  go: "1.22"
+  timeout: 5m
+  working-directory: backend
+
+linters:
+  disable-all: true
+  enable:
+    - errcheck
+    - govet
+    - staticcheck

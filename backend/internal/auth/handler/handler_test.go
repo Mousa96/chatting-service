@@ -20,9 +20,9 @@ func TestRegister(t *testing.T) {
 	handler := NewAuthHandler(authService)
 
 	tests := []struct {
-		name          string
-		request       models.CreateUserRequest
-		expectedCode  int
+		name         string
+		request      models.CreateUserRequest
+		expectedCode int
 	}{
 		{
 			name: "Valid registration",
@@ -82,12 +82,15 @@ func TestLogin(t *testing.T) {
 		Username: "testuser",
 		Password: "testpass123",
 	}
-	authService.Register(&validUser)
+	_, err := authService.Register(&validUser)
+	if err != nil {
+		t.Fatalf("Failed to register test user: %v", err)
+	}
 
 	tests := []struct {
-		name          string
-		request       models.LoginRequest
-		expectedCode  int
+		name         string
+		request      models.LoginRequest
+		expectedCode int
 	}{
 		{
 			name: "Valid login",
@@ -134,4 +137,4 @@ func TestLogin(t *testing.T) {
 			}
 		})
 	}
-} 
+}

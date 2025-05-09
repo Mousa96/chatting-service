@@ -1,3 +1,4 @@
+// Package middleware provides HTTP middleware functions
 package middleware
 
 import (
@@ -8,6 +9,10 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
+// UserIDKey is the context key for the user ID
+type UserIDKey struct{}
+
+// AuthMiddleware creates a new authentication middleware
 func AuthMiddleware(jwtKey []byte) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -25,7 +30,7 @@ func AuthMiddleware(jwtKey []byte) func(http.Handler) http.Handler {
 
 			tokenStr := bearerToken[1]
 			claims := jwt.MapClaims{}
-			token, err := jwt.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (interface{}, error) {
+			token, err := jwt.ParseWithClaims(tokenStr, claims, func(_ *jwt.Token) (interface{}, error) {
 				return jwtKey, nil
 			})
 
@@ -35,8 +40,8 @@ func AuthMiddleware(jwtKey []byte) func(http.Handler) http.Handler {
 			}
 
 			userID := int(claims["user_id"].(float64))
-			ctx := context.WithValue(r.Context(), "user_id", userID)
+			ctx := context.WithValue(r.Context(), UserIDKey{}, userID)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
-} 
+}
