@@ -92,10 +92,21 @@ func setupTestServer(db *sql.DB) *http.ServeMux {
 	userRepo := authRepo.NewUserRepository(db)
 	messageRepo := msgRepo.NewMessageRepository(db)
 
+	// Create a test-specific storage path
+	testUploadsDir := "/app/uploads"
+	testPublicPath := "/uploads"
+	
+	// Ensure the directory exists
+	if err := os.MkdirAll(testUploadsDir, 0755); err != nil {
+		log.Fatalf("Failed to create test uploads directory: %v", err)
+	}
+	
+	// Initialize storage with test directory
+	fileStorage := storage.NewLocalStorage(testUploadsDir, testPublicPath)
+
 	// Initialize services with the same JWT key
 	authSvc := authService.NewAuthService(userRepo, testJWTKey)
-	storage := storage.NewLocalStorage("test_uploads", "/uploads")
-	messageSvc := msgService.NewMessageService(messageRepo, storage)
+	messageSvc := msgService.NewMessageService(messageRepo, fileStorage)
 
 	// Initialize handlers
 	authHdlr := authHandler.NewAuthHandler(authSvc)

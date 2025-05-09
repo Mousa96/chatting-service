@@ -27,15 +27,21 @@ func NewMessageService(messageRepo repository.Repository, storage storage.Storag
 }
 
 func (s *MessageService) SendMessage(senderID int, req *models.CreateMessageRequest) (*models.Message, error) {
+	// Modified validation to properly handle media-only messages
+	if req.Content == "" && req.MediaURL == "" {
+		return nil, fmt.Errorf("message must have either content or media")
+	}
+
 	msg := &models.Message{
 		SenderID:   senderID,
 		ReceiverID: req.ReceiverID,
 		Content:    req.Content,
 		MediaURL:   req.MediaURL,
+		CreatedAt:  time.Now(),
 	}
 
 	if err := s.messageRepo.Create(msg); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create message: %w", err)
 	}
 
 	return msg, nil
@@ -54,7 +60,7 @@ func (s *MessageService) UploadMedia(userID int, file *multipart.FileHeader) (st
 
 	// Generate unique filename
 	ext := filepath.Ext(file.Filename)
-	filename := fmt.Sprintf("%d_%d%s", userID, time.Now().UnixNano(), ext)
+	filename := fmt.Sprintf("/uploads/%d_%d%s", userID, time.Now().UnixNano(), ext)
 
 	// Upload using storage interface
 	url, err := s.storage.Upload(filename, src, file.Header.Get("Content-Type"))
@@ -69,8 +75,10 @@ func (s *MessageService) BroadcastMessage(senderID int, req *models.BroadcastMes
 	if len(req.ReceiverIDs) == 0 {
 		return nil, fmt.Errorf("receiver IDs cannot be empty")
 	}
-	if req.Content == "" {
-		return nil, fmt.Errorf("message content cannot be empty")
+	
+	// Modified validation to properly handle media-only messages
+	if req.Content == "" && req.MediaURL == "" {
+		return nil, fmt.Errorf("message must have either content or media")
 	}
 
 	var messages []*models.Message
@@ -82,6 +90,7 @@ func (s *MessageService) BroadcastMessage(senderID int, req *models.BroadcastMes
 			ReceiverID: receiverID,
 			Content:    req.Content,
 			MediaURL:   req.MediaURL,
+			CreatedAt:  time.Now(),
 		}
 
 		if err := s.messageRepo.Create(msg); err != nil {

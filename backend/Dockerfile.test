@@ -8,5 +8,8 @@ COPY . .
 # Download dependencies
 RUN go mod download
 
+# Create uploads directory structure
+RUN mkdir -p /app/uploads/uploads
+
 # Run tests (using the existing migrations in internal/db)
 CMD ["go", "test", "./internal/integration/...", "-v"]

@@ -56,30 +56,26 @@ func (h *MessageHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 func (h *MessageHandler) GetConversation(w http.ResponseWriter, r *http.Request) {
 	userID, ok := r.Context().Value(middleware.UserIDKey).(int)
 	if !ok {
-		log.Printf("Failed to get userID from context") // Add debug log
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	otherUserID := r.URL.Query().Get("user_id")
-
-	otherID, err := strconv.Atoi(otherUserID)
+	otherUserID, err := strconv.Atoi(r.URL.Query().Get("user_id"))
 	if err != nil {
-		http.Error(w, "Invalid user ID", http.StatusBadRequest)
+		http.Error(w, "invalid user_id", http.StatusBadRequest)
 		return
 	}
 
-	messages, err := h.messageService.GetConversation(userID, otherID)
+	messages, err := h.messageService.GetConversation(userID, otherUserID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "failed to get conversation", http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(messages); err != nil {
-		http.Error(w, "failed to encode response", http.StatusInternalServerError)
-		return
-	}
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"messages": messages,
+	})
 }
 
 func (h *MessageHandler) UploadMedia(w http.ResponseWriter, r *http.Request) {

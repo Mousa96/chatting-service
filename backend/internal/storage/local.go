@@ -8,38 +8,51 @@ import (
 )
 
 type LocalStorage struct {
-	uploadDir string
-	baseURL   string
+	uploadDir    string
+	publicPath   string
 }
 
-func NewLocalStorage(uploadDir, baseURL string) *LocalStorage {
+func NewLocalStorage(uploadDir, publicPath string) Storage {
+	// Create upload directory if it doesn't exist
+	if err := os.MkdirAll(uploadDir, 0755); err != nil {
+		panic(fmt.Sprintf("failed to create upload directory: %v", err))
+	}
 	return &LocalStorage{
-		uploadDir: uploadDir,
-		baseURL:   baseURL,
+		uploadDir:    uploadDir,
+		publicPath:   publicPath,
 	}
 }
 
-func (s *LocalStorage) Upload(filename string, content io.Reader, contentType string) (string, error) {
-	// Ensure upload directory exists
-	if err := os.MkdirAll(s.uploadDir, 0755); err != nil {
-		return "", fmt.Errorf("failed to create upload directory: %w", err)
+func (s *LocalStorage) Upload(filename string, src io.Reader, contentType string) (string, error) {
+	// Remove leading slash from filename if present
+	filename = filepath.Clean(filename)
+	if filename[0] == '/' {
+		filename = filename[1:]
 	}
 
-	// Create file with safe path
-	path := filepath.Join(s.uploadDir, filename)
-	file, err := os.Create(path)
+	// Create the full path
+	fullPath := filepath.Join(s.uploadDir, filename)
+
+	// Ensure the directory exists
+	dir := filepath.Dir(fullPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create directory: %w", err)
+	}
+
+	// Create the file
+	dst, err := os.Create(fullPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to create file: %w", err)
 	}
-	defer file.Close()
+	defer dst.Close()
 
-	// Copy content to file
-	if _, err := io.Copy(file, content); err != nil {
+	// Copy the file content
+	if _, err := io.Copy(dst, src); err != nil {
 		return "", fmt.Errorf("failed to write file: %w", err)
 	}
 
-	// Return public URL
-	return fmt.Sprintf("%s/%s", s.baseURL, filename), nil
+	// Return the public URL path
+	return filepath.Join(s.publicPath, filename), nil
 }
 
 func (s *LocalStorage) Delete(filename string) error {

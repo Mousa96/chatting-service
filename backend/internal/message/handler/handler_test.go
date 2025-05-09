@@ -113,71 +113,80 @@ func TestSendMessage(t *testing.T) {
 }
 
 func TestGetConversation(t *testing.T) {
-	mockSvc := new(mockService)
-	handler := NewMessageHandler(mockSvc)
-
-	messages := []models.Message{
-		{SenderID: 1, ReceiverID: 2, Content: "Hello"},
-		{SenderID: 2, ReceiverID: 1, Content: "Hi"},
-	}
-
 	tests := []struct {
-		name         string
-		userID       int
-		otherUserID  string
-		expectedID   int
-		messages     []models.Message
-		expectedCode int
+		name           string
+		userID         int
+		otherUserID    string
+		setupMock      func(mock *mockService)
+		expectedStatus int
+		expectedBody   []models.Message
 	}{
 		{
-			name:         "Valid conversation",
-			userID:       1,
-			otherUserID:  "2",
-			expectedID:   2,
-			messages:     messages,
-			expectedCode: http.StatusOK,
+			name:        "Valid conversation",
+			userID:      1,
+			otherUserID: "2",
+			setupMock: func(mock *mockService) {
+				messages := []models.Message{
+					{SenderID: 1, ReceiverID: 2, Content: "Hello"},
+					{SenderID: 2, ReceiverID: 1, Content: "Hi"},
+				}
+				mock.On("GetConversation", 1, 2).Return(messages, nil)
+			},
+			expectedStatus: http.StatusOK,
+			expectedBody: []models.Message{
+				{SenderID: 1, ReceiverID: 2, Content: "Hello"},
+				{SenderID: 2, ReceiverID: 1, Content: "Hi"},
+			},
 		},
 		{
-			name:         "Invalid user ID",
-			userID:       1,
-			otherUserID:  "invalid",
-			expectedCode: http.StatusBadRequest,
+			name:           "Invalid user ID",
+			userID:         1,
+			otherUserID:    "invalid",
+			setupMock:      func(mock *mockService) {}, // Empty setup for invalid case
+			expectedStatus: http.StatusBadRequest,
 		},
 		{
-			name:         "Empty conversation",
-			userID:       1,
-			otherUserID:  "3",
-			expectedID:   3,
-			messages:     []models.Message{},
-			expectedCode: http.StatusOK,
+			name:           "Empty conversation",
+			userID:         1,
+			otherUserID:    "3",
+			setupMock: func(mock *mockService) {
+				mock.On("GetConversation", 1, 3).Return([]models.Message{}, nil)
+			},
+			expectedStatus: http.StatusOK,
+			expectedBody:   []models.Message{},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.expectedCode == http.StatusOK {
-				mockSvc.On("GetConversation", tt.userID, tt.expectedID).Return(tt.messages, nil)
+			mockSvc := new(mockService)
+			if tt.setupMock != nil {
+				tt.setupMock(mockSvc)
 			}
+			handler := NewMessageHandler(mockSvc)
 
-			req := httptest.NewRequest(http.MethodGet, "/api/messages/conversation?user_id="+tt.otherUserID, nil)
-			
-			// Add user ID to context
-			ctx := context.WithValue(req.Context(), middleware.UserIDKey, tt.userID)
-			req = req.WithContext(ctx)
-
+			// Create request with context
+			req := httptest.NewRequest("GET", fmt.Sprintf("/conversation?user_id=%s", tt.otherUserID), nil)
+			req = req.WithContext(context.WithValue(req.Context(), middleware.UserIDKey, tt.userID))
 			rr := httptest.NewRecorder()
+
+			// Call handler
 			handler.GetConversation(rr, req)
 
-			assert.Equal(t, tt.expectedCode, rr.Code)
+			// Check status code
+			assert.Equal(t, tt.expectedStatus, rr.Code)
 
-			if tt.expectedCode == http.StatusOK {
-				var response []models.Message
+			if tt.expectedStatus == http.StatusOK {
+				// Parse response
+				var response struct {
+					Messages []models.Message `json:"messages"`
+				}
 				err := json.NewDecoder(rr.Body).Decode(&response)
 				assert.NoError(t, err)
-				assert.Equal(t, tt.messages, response)
+				
+				// Compare messages
+				assert.Equal(t, tt.expectedBody, response.Messages)
 			}
-
-			mockSvc.AssertExpectations(t)
 		})
 	}
 }

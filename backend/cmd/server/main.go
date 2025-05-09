@@ -17,6 +17,21 @@ import (
 	"github.com/Mousa96/chatting-service/internal/storage"
 )
 
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "http://localhost:5173")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
 func main() {
 	// Database configuration
 	dbConfig := &db.Config{
@@ -51,14 +66,13 @@ func main() {
 	messageRepo := msgRepo.NewMessageRepository(database)
 
 	// Initialize storage
-	storageConfig := storage.NewLocalStorageConfig()
-	fileStorage := storage.NewLocalStorage(storageConfig.LocalPath, storageConfig.BaseURL)
+	fileStorage := storage.NewLocalStorage("uploads", "/uploads")
 	
 	// Create a new ServeMux for better route handling
 	mux := http.NewServeMux()
 
-	// Serve uploaded files
-	fs := http.FileServer(http.Dir(storageConfig.LocalPath))
+	// Serve static files
+	fs := http.FileServer(http.Dir("uploads"))
 	mux.Handle("/uploads/", http.StripPrefix("/uploads/", fs))
 
 	// Initialize services
@@ -79,27 +93,26 @@ func main() {
 			log.Printf("Error writing response: %v", err)
 		}
 	})
-	mux.HandleFunc("/api/auth/register", authHdlr.Register)
-	mux.HandleFunc("/api/auth/login", authHdlr.Login)
+	mux.Handle("/api/auth/register", corsMiddleware(http.HandlerFunc(authHdlr.Register)))
+	mux.Handle("/api/auth/login", corsMiddleware(http.HandlerFunc(authHdlr.Login)))
 
 	// Protected routes
 	messageMux := http.NewServeMux()
-	messageMux.HandleFunc("/api/messages", messageHdlr.SendMessage)
-	messageMux.HandleFunc("/api/messages/conversation", messageHdlr.GetConversation)
-	messageMux.HandleFunc("/api/messages/upload", messageHdlr.UploadMedia)
-	messageMux.HandleFunc("/api/messages/broadcast", messageHdlr.BroadcastMessage)
-	messageMux.HandleFunc("/api/messages/history", messageHdlr.GetMessageHistory)
+	messageMux.HandleFunc("/", messageHdlr.SendMessage)
+	messageMux.HandleFunc("/conversation", messageHdlr.GetConversation)
+	messageMux.HandleFunc("/upload", messageHdlr.UploadMedia)
+	messageMux.HandleFunc("/broadcast", messageHdlr.BroadcastMessage)
+	messageMux.HandleFunc("/history", messageHdlr.GetMessageHistory)
 
 	// Apply middleware to protected routes
-	mux.Handle("/api/messages", authMiddleware(messageMux))
-	mux.Handle("/api/messages/", authMiddleware(messageMux)) // Note the trailing slash
+	mux.Handle("/api/messages/", corsMiddleware(authMiddleware(http.StripPrefix("/api/messages", messageMux))))
 
 	port := ":8080"
 
 	// Create a server with timeouts
 	srv := &http.Server{
 		Addr:         port,
-		Handler:      mux,
+		Handler:      corsMiddleware(mux),
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,

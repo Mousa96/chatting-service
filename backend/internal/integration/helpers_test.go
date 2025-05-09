@@ -81,9 +81,11 @@ func getTestConversation(userID int, token string) ([]msgModels.Message, error) 
 		return nil, fmt.Errorf("unexpected status code: %d, body: %s", rr.Code, rr.Body.String())
 	}
 
-	var messages []msgModels.Message
-	if err := json.NewDecoder(rr.Body).Decode(&messages); err != nil {
+	var response struct {
+		Messages []msgModels.Message `json:"messages"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&response); err != nil {
 		return nil, err
 	}
-	return messages, nil
+	return response.Messages, nil
 }
