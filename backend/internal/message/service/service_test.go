@@ -1,16 +1,19 @@
 package service
 
 import (
+	"io"
 	"testing"
 
 	"github.com/Mousa96/chatting-service/internal/message/models"
 	"github.com/Mousa96/chatting-service/internal/message/repository"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 )
 
 func TestSendMessage(t *testing.T) {
 	repo := repository.NewTestMessageRepository()
-	messageService := NewMessageService(repo)
+	mockStorage := new(mockStorage)
+	messageService := NewMessageService(repo, mockStorage)
 
 	tests := []struct {
 		name        string
@@ -62,7 +65,8 @@ func TestSendMessage(t *testing.T) {
 
 func TestGetConversation(t *testing.T) {
 	repo := repository.NewTestMessageRepository()
-	messageService := NewMessageService(repo)
+	mockStorage := new(mockStorage)
+	messageService := NewMessageService(repo, mockStorage)
 
 	// Setup test messages
 	messages := []models.Message{
@@ -130,4 +134,19 @@ func TestGetConversation(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Add mock storage
+type mockStorage struct {
+	mock.Mock
+}
+
+func (m *mockStorage) Upload(filename string, content io.Reader, contentType string) (string, error) {
+	args := m.Called(filename, content, contentType)
+	return args.String(0), args.Error(1)
+}
+
+func (m *mockStorage) Delete(filename string) error {
+	args := m.Called(filename)
+	return args.Error(0)
 }

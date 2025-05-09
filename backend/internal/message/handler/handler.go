@@ -81,3 +81,77 @@ func (h *MessageHandler) GetConversation(w http.ResponseWriter, r *http.Request)
 		return
 	}
 }
+
+func (h *MessageHandler) UploadMedia(w http.ResponseWriter, r *http.Request) {
+	userID, ok := r.Context().Value(middleware.UserIDKey).(int)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// Parse multipart form with 10MB max memory
+	if err := r.ParseMultipartForm(10 << 20); err != nil {
+		log.Printf("Failed to parse multipart form: %v", err)
+		http.Error(w, "file too large", http.StatusBadRequest)
+		return
+	}
+
+	// Get file from form
+	file, header, err := r.FormFile("media")
+	if err != nil {
+		log.Printf("Failed to get form file: %v", err)
+		http.Error(w, "invalid file", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	// Read a few bytes to detect content type
+	buffer := make([]byte, 512)
+	n, err := file.Read(buffer)
+	if err != nil {
+		log.Printf("Failed to read file buffer: %v", err)
+		http.Error(w, "failed to read file", http.StatusBadRequest)
+		return
+	}
+	
+	// Reset file pointer
+	_, err = file.Seek(0, 0)
+	if err != nil {
+		log.Printf("Failed to reset file pointer: %v", err)
+		http.Error(w, "failed to process file", http.StatusInternalServerError)
+		return
+	}
+	
+	// Detect content type
+	contentType := http.DetectContentType(buffer[:n])
+	log.Printf("Detected content type: %s", contentType)
+	
+	if !isAllowedFileType(contentType) {
+		log.Printf("File type not allowed: %s", contentType)
+		http.Error(w, "file type not allowed", http.StatusBadRequest)
+		return
+	}
+
+	// Upload file
+	url, err := h.messageService.UploadMedia(userID, header)
+	if err != nil {
+		log.Printf("Failed to upload file: %v", err)
+		http.Error(w, "failed to upload file", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"url": url,
+	})
+}
+
+func isAllowedFileType(contentType string) bool {
+	allowedTypes := map[string]bool{
+		"image/jpeg": true,
+		"image/png":  true,
+		"image/gif":  true,
+		"video/mp4":  true,
+	}
+	return allowedTypes[contentType]
+}

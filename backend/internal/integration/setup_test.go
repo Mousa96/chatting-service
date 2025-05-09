@@ -16,6 +16,7 @@ import (
 	msgRepo "github.com/Mousa96/chatting-service/internal/message/repository"
 	msgService "github.com/Mousa96/chatting-service/internal/message/service"
 	"github.com/Mousa96/chatting-service/internal/middleware"
+	"github.com/Mousa96/chatting-service/internal/storage"
 )
 
 var (
@@ -93,7 +94,8 @@ func setupTestServer(db *sql.DB) *http.ServeMux {
 
 	// Initialize services with the same JWT key
 	authSvc := authService.NewAuthService(userRepo, testJWTKey)
-	messageSvc := msgService.NewMessageService(messageRepo)
+	storage := storage.NewLocalStorage("test_uploads", "/uploads")
+	messageSvc := msgService.NewMessageService(messageRepo, storage)
 
 	// Initialize handlers
 	authHdlr := authHandler.NewAuthHandler(authSvc)
@@ -107,6 +109,7 @@ func setupTestServer(db *sql.DB) *http.ServeMux {
 	mux.HandleFunc("/api/auth/login", authHdlr.Login)
 	mux.Handle("/api/messages", authMiddleware(http.HandlerFunc(messageHdlr.SendMessage)))
 	mux.Handle("/api/messages/conversation", authMiddleware(http.HandlerFunc(messageHdlr.GetConversation)))
+	mux.Handle("/api/messages/upload", authMiddleware(http.HandlerFunc(messageHdlr.UploadMedia)))
 
 	return mux
 }

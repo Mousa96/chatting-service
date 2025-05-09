@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"mime/multipart"
+
 	"github.com/Mousa96/chatting-service/internal/message/models"
 	"github.com/Mousa96/chatting-service/internal/middleware"
 	"github.com/stretchr/testify/assert"
@@ -26,6 +28,11 @@ func (m *mockService) SendMessage(senderID int, req *models.CreateMessageRequest
 func (m *mockService) GetConversation(userID1, userID2 int) ([]models.Message, error) {
 	args := m.Called(userID1, userID2)
 	return args.Get(0).([]models.Message), args.Error(1)
+}
+
+func (m *mockService) UploadMedia(userID int, file *multipart.FileHeader) (string, error) {
+	args := m.Called(userID, file)
+	return args.String(0), args.Error(1)
 }
 
 func TestSendMessage(t *testing.T) {
@@ -157,6 +164,90 @@ func TestGetConversation(t *testing.T) {
 			}
 
 			mockSvc.AssertExpectations(t)
+		})
+	}
+}
+
+func TestUploadMedia(t *testing.T) {
+	tests := []struct {
+		name         string
+		fileContent  []byte
+		filename     string
+		contentType  string
+		expectedCode int
+	}{
+		{
+			name: "Valid image upload",
+			// JPEG file header magic bytes
+			fileContent: []byte{
+				0xFF, 0xD8, 0xFF, 0xE0, // JPEG SOI and APP0 marker
+				0x00, 0x10, 0x4A, 0x46, // APP0 length and "JF"
+				0x49, 0x46, 0x00, 0x01, // "IF" and version
+				0x01, 0x02, 0x03, 0x04, // Some image data
+			},
+			filename:     "test.jpg",
+			contentType:  "image/jpeg",
+			expectedCode: http.StatusOK,
+		},
+		{
+			name:         "Invalid file type",
+			fileContent:  []byte("text content"),
+			filename:     "test.txt",
+			contentType:  "text/plain",
+			expectedCode: http.StatusBadRequest,
+		},
+		{
+			name:         "Empty file",
+			fileContent:  []byte{},
+			filename:     "empty.jpg",
+			contentType:  "image/jpeg",
+			expectedCode: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockService := new(mockService)
+			handler := NewMessageHandler(mockService)
+
+			// Create multipart form
+			body := &bytes.Buffer{}
+			writer := multipart.NewWriter(body)
+			part, err := writer.CreateFormFile("media", tt.filename)
+			assert.NoError(t, err)
+			_, err = part.Write(tt.fileContent)
+			assert.NoError(t, err)
+			writer.Close()
+
+			// Create request
+			req := httptest.NewRequest(http.MethodPost, "/api/messages/upload", body)
+			req.Header.Set("Content-Type", writer.FormDataContentType())
+			
+			// Add user ID to context
+			ctx := context.WithValue(req.Context(), middleware.UserIDKey, 1)
+			req = req.WithContext(ctx)
+			
+			rr := httptest.NewRecorder()
+
+			if tt.expectedCode == http.StatusOK {
+				mockService.On("UploadMedia", 1, mock.AnythingOfType("*multipart.FileHeader")).
+					Return("https://storage.example.com/"+tt.filename, nil)
+			}
+
+			handler.UploadMedia(rr, req)
+
+			assert.Equal(t, tt.expectedCode, rr.Code)
+
+			if tt.expectedCode == http.StatusOK {
+				var response struct {
+					URL string `json:"url"`
+				}
+				err := json.NewDecoder(rr.Body).Decode(&response)
+				assert.NoError(t, err)
+				assert.Contains(t, response.URL, tt.filename)
+			}
+
+			mockService.AssertExpectations(t)
 		})
 	}
 }

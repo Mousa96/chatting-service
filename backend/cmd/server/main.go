@@ -14,6 +14,7 @@ import (
 	msgRepo "github.com/Mousa96/chatting-service/internal/message/repository"
 	msgService "github.com/Mousa96/chatting-service/internal/message/service"
 	"github.com/Mousa96/chatting-service/internal/middleware"
+	"github.com/Mousa96/chatting-service/internal/storage"
 )
 
 func main() {
@@ -49,10 +50,21 @@ func main() {
 	userRepo := authRepo.NewUserRepository(database)
 	messageRepo := msgRepo.NewMessageRepository(database)
 
+	// Initialize storage
+	storageConfig := storage.NewLocalStorageConfig()
+	fileStorage := storage.NewLocalStorage(storageConfig.LocalPath, storageConfig.BaseURL)
+	
+	// Create a new ServeMux for better route handling
+	mux := http.NewServeMux()
+
+	// Serve uploaded files
+	fs := http.FileServer(http.Dir(storageConfig.LocalPath))
+	mux.Handle("/uploads/", http.StripPrefix("/uploads/", fs))
+
 	// Initialize services
 	jwtKey := []byte("your-secret-key") // In production, use environment variable
 	authSvc := authService.NewAuthService(userRepo, jwtKey)
-	messageSvc := msgService.NewMessageService(messageRepo)
+	messageSvc := msgService.NewMessageService(messageRepo, fileStorage)
 
 	// Initialize handlers
 	authHdlr := authHandler.NewAuthHandler(authSvc)
@@ -60,9 +72,6 @@ func main() {
 
 	// Initialize middleware
 	authMiddleware := middleware.AuthMiddleware(jwtKey)
-
-	// Create a new ServeMux for better route handling
-	mux := http.NewServeMux()
 
 	// Public routes
 	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {

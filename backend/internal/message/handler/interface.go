@@ -9,4 +9,6 @@ type Handler interface {
 	SendMessage(w http.ResponseWriter, r *http.Request)
 	// GetConversation retrieves the conversation history between users
 	GetConversation(w http.ResponseWriter, r *http.Request)
+	// UploadMedia handles the media uploading request
+	UploadMedia(w http.ResponseWriter, r *http.Request)
 }
