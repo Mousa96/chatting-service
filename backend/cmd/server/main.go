@@ -5,6 +5,9 @@ import (
 	"net/http"
 
 	"github.com/Mousa96/chatting-service/internal/db"
+	"github.com/Mousa96/chatting-service/internal/handler"
+	"github.com/Mousa96/chatting-service/internal/repository"
+	"github.com/Mousa96/chatting-service/internal/service"
 )
 
 func main() {
@@ -32,12 +35,24 @@ func main() {
 
 	log.Println("Successfully connected to database")
 
-	// Basic health check endpoint
+	// Initialize repositories
+	userRepo := repository.NewUserRepository(database)
+
+	// Initialize services
+	jwtKey := []byte("your-secret-key") // In production, use environment variable
+	authService := service.NewAuthService(userRepo, jwtKey)
+
+	// Initialize handlers
+	authHandler := handler.NewAuthHandler(authService)
+
+	// Register routes
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	})
-	
+	http.HandleFunc("/api/auth/register", authHandler.Register)
+	http.HandleFunc("/api/auth/login", authHandler.Login)
+
 	port := ":8080"
 	log.Printf("Server starting on %s", port)
 	if err := http.ListenAndServe(port, nil); err != nil {
