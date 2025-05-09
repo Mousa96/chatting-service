@@ -202,3 +202,32 @@ func (h *MessageHandler) GetMessageHistory(w http.ResponseWriter, r *http.Reques
 		"messages": messages,
 	})
 }
+
+func (h *MessageHandler) UpdateMessageStatus(w http.ResponseWriter, r *http.Request) {
+	_, ok := r.Context().Value(middleware.UserIDKey).(int)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	var req struct {
+		MessageID int    `json:"message_id"`
+		Status    string `json:"status"`
+	}
+	
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if err := h.messageService.UpdateMessageStatus(req.MessageID, models.MessageStatus(req.Status)); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Return a proper JSON response
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"status": "success",
+	})
+}

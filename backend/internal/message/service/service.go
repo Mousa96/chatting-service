@@ -58,9 +58,9 @@ func (s *MessageService) UploadMedia(userID int, file *multipart.FileHeader) (st
 	}
 	defer src.Close()
 
-	// Generate unique filename
+	// Generate unique filename - remove the leading /uploads/
 	ext := filepath.Ext(file.Filename)
-	filename := fmt.Sprintf("/uploads/%d_%d%s", userID, time.Now().UnixNano(), ext)
+	filename := fmt.Sprintf("%d_%d%s", userID, time.Now().UnixNano(), ext)
 
 	// Upload using storage interface
 	url, err := s.storage.Upload(filename, src, file.Header.Get("Content-Type"))
@@ -105,4 +105,22 @@ func (s *MessageService) BroadcastMessage(senderID int, req *models.BroadcastMes
 
 func (s *MessageService) GetMessageHistory(userID int) ([]models.Message, error) {
 	return s.messageRepo.GetMessageHistory(userID)
+}
+
+func (s *MessageService) UpdateMessageStatus(messageID int, status models.MessageStatus) error {
+	if status != models.StatusDelivered && status != models.StatusRead && status != models.StatusSent {
+		return fmt.Errorf("invalid status: %s", status)
+	}
+
+	// Verify message exists
+	if _, err := s.messageRepo.GetMessageByID(messageID); err != nil {
+		return fmt.Errorf("failed to find message: %w", err)
+	}
+
+	// Update the status
+	if err := s.messageRepo.UpdateMessageStatus(messageID, status); err != nil {
+		return fmt.Errorf("failed to update status: %w", err)
+	}
+
+	return nil
 }

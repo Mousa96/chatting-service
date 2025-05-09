@@ -8,6 +8,7 @@ import (
 	"github.com/Mousa96/chatting-service/internal/message/repository"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSendMessage(t *testing.T) {
@@ -276,6 +277,62 @@ func TestGetMessageHistory(t *testing.T) {
 			// Verify all messages involve the user
 			for _, msg := range messages {
 				assert.True(t, msg.SenderID == tt.userID || msg.ReceiverID == tt.userID)
+			}
+		})
+	}
+}
+
+func TestUpdateMessageStatus(t *testing.T) {
+	repo := repository.NewTestMessageRepository()
+	mockStorage := new(mockStorage)
+	messageService := NewMessageService(repo, mockStorage)
+
+	// Create a test message
+	msg := &models.Message{
+		SenderID:   1,
+		ReceiverID: 2,
+		Content:    "Test message",
+		Status:     models.StatusSent,
+	}
+	err := repo.Create(msg)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name          string
+		messageID     int
+		newStatus     models.MessageStatus
+		expectedError bool
+	}{
+		{
+			name:          "Valid status update to delivered",
+			messageID:     msg.ID,
+			newStatus:     models.StatusDelivered,
+			expectedError: false,
+		},
+		{
+			name:          "Valid status update to read",
+			messageID:     msg.ID,
+			newStatus:     models.StatusRead,
+			expectedError: false,
+		},
+		{
+			name:          "Invalid status value",
+			messageID:     msg.ID,
+			newStatus:     "invalid_status",
+			expectedError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := messageService.UpdateMessageStatus(tt.messageID, tt.newStatus)
+			if tt.expectedError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				msg, err := repo.GetMessageByID(tt.messageID)
+				assert.NoError(t, err)
+				assert.Equal(t, tt.newStatus, msg.Status)
 			}
 		})
 	}

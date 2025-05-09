@@ -15,4 +15,6 @@ type Handler interface {
 	BroadcastMessage(w http.ResponseWriter, r *http.Request)
 	// GetMessageHistory retrieves the message history
 	GetMessageHistory(w http.ResponseWriter, r *http.Request)
+	// UpdateMessageStatus handles the message status update request
+	UpdateMessageStatus(w http.ResponseWriter, r *http.Request)
 }

@@ -11,4 +11,8 @@ type Repository interface {
 	GetConversation(userID1, userID2 int) ([]models.Message, error)
 	// GetMessageHistory retrieves the message history for a user
 	GetMessageHistory(userID int) ([]models.Message, error)
+	// GetMessageByID retrieves a message by its ID
+	GetMessageByID(messageID int) (*models.Message, error)
+	// UpdateMessageStatus updates the status of a message
+	UpdateMessageStatus(messageID int, status models.MessageStatus) error
 }

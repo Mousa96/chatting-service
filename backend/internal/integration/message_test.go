@@ -10,6 +10,7 @@ import (
 
 	"mime/multipart"
 
+	"github.com/Mousa96/chatting-service/internal/message/models"
 	msgModels "github.com/Mousa96/chatting-service/internal/message/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -142,4 +143,84 @@ func TestGetMessageHistory(t *testing.T) {
 	}
 	err := json.NewDecoder(rr.Body).Decode(&response)
 	require.NoError(t, err)
+}
+
+func TestMessageStatusUpdate(t *testing.T) {
+	// Setup users
+	senderToken := setupTestUser("sender", "pass123")
+	receiverToken := setupTestUser("receiver", "pass123")
+
+	// Send a test message
+	msgReq := msgModels.CreateMessageRequest{
+		ReceiverID: 3, // receiver's ID
+		Content:    "Test message for status update",
+	}
+	resp := sendTestMessage(msgReq, senderToken)
+	require.Equal(t, http.StatusOK, resp.Code)
+
+	// Parse the message ID from response
+	var msgResp struct {
+		Message struct {
+			ID int `json:"id"`
+		} `json:"message"`
+	}
+	err := json.NewDecoder(resp.Body).Decode(&msgResp)
+	require.NoError(t, err)
+	messageID := msgResp.Message.ID
+
+	tests := []struct {
+		name         string
+		token        string
+		status       string
+		expectedCode int
+	}{
+		{
+			name:         "Mark as delivered by receiver",
+			token:        receiverToken,
+			status:       string(models.StatusDelivered),
+			expectedCode: http.StatusOK,
+		},
+		{
+			name:         "Mark as read by receiver",
+			token:        receiverToken,
+			status:       string(models.StatusRead),
+			expectedCode: http.StatusOK,
+		},
+		{
+			name:         "Attempt update by sender",
+			token:        senderToken,
+			status:       string(models.StatusDelivered),
+			expectedCode: http.StatusBadRequest,
+		},
+		{
+			name:         "Invalid status",
+			token:        receiverToken,
+			status:       "invalid_status",
+			expectedCode: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			updateReq := struct {
+				MessageID int    `json:"message_id"`
+				Status    string `json:"status"`
+			}{
+				MessageID: messageID,
+				Status:    tt.status,
+			}
+
+			body, err := json.Marshal(updateReq)
+			require.NoError(t, err)
+
+			req := httptest.NewRequest(http.MethodPut, "/api/messages/status", bytes.NewBuffer(body))
+			req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", tt.token))
+			req.Header.Set("Content-Type", "application/json")
+
+			rr := httptest.NewRecorder()
+			testServer.ServeHTTP(rr, req)
+
+			assert.Equal(t, tt.expectedCode, rr.Code)
+		})
+	}
 }

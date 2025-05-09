@@ -1,4 +1,6 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
+import Message from "./Message";
+import { updateMessageStatus } from "../api/messages";
 
 function Chat() {
   const [messages, setMessages] = useState([]);
@@ -22,14 +24,11 @@ function Chat() {
 
   const loadMessageHistory = async () => {
     try {
-      const response = await fetch(
-        "http://localhost:8080/api/messages/history",
-        {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("token")}`,
-          },
-        }
-      );
+      const response = await fetch("/api/messages/history", {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+      });
       if (response.ok) {
         const data = await response.json();
         setMessages(data.messages);
@@ -150,6 +149,107 @@ function Chat() {
     loadConversation(userId);
   };
 
+  const handleMessageVisible = useCallback(
+    async (message) => {
+      if (message.sender_id !== currentUserId && message.status !== "read") {
+        try {
+          await updateMessageStatus(message.id, "read");
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === message.id ? { ...m, status: "read" } : m
+            )
+          );
+        } catch (error) {
+          console.error("Failed to update message status:", error);
+        }
+      }
+    },
+    [currentUserId]
+  );
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            const messageId = parseInt(entry.target.dataset.messageId);
+            const message = messages.find((m) => m.id === messageId);
+            if (message) {
+              handleMessageVisible(message);
+            }
+          }
+        });
+      },
+      { threshold: 1.0 }
+    );
+
+    const messageElements = document.querySelectorAll(".message");
+    messageElements.forEach((element) => observer.observe(element));
+
+    return () => observer.disconnect();
+  }, [messages, handleMessageVisible]);
+
+  useEffect(() => {
+    const markAsDelivered = async (message) => {
+      if (message.sender_id !== currentUserId && message.status === "sent") {
+        try {
+          await updateMessageStatus(message.id, "delivered");
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === message.id ? { ...m, status: "delivered" } : m
+            )
+          );
+        } catch (error) {
+          console.error("Failed to update message status:", error);
+        }
+      }
+    };
+
+    // Mark new messages as delivered
+    messages.forEach(markAsDelivered);
+  }, [messages, currentUserId]);
+
+  // Add this function to format media URLs correctly
+  const formatMediaUrl = (url) => {
+    if (!url) return "";
+
+    // If URL is already a full URL (starts with http or https), return as is
+    if (url.startsWith("http://") || url.startsWith("https://")) {
+      return url;
+    }
+
+    // Otherwise, prepend the backend URL
+    return `http://localhost:8080${url}`;
+  };
+
+  const markMessagesAsRead = async () => {
+    if (!messages || messages.length === 0 || !currentUserId) return;
+
+    // Find messages sent by the other user that are not already marked as read
+    const unreadMessages = messages.filter(
+      (message) =>
+        message.sender_id !== currentUserId && message.status !== "read"
+    );
+
+    if (unreadMessages.length === 0) return;
+
+    // Update each message status to "read"
+    for (const message of unreadMessages) {
+      try {
+        await updateMessageStatus(message.id, "read");
+        console.log(`Marked message ${message.id} as read`);
+      } catch (error) {
+        console.error(`Failed to mark message ${message.id} as read:`, error);
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (selectedUser) {
+      markMessagesAsRead();
+    }
+  }, [messages, selectedUser]);
+
   return (
     <div style={{ display: "flex", gap: "20px" }}>
       <div
@@ -201,56 +301,20 @@ function Chat() {
             marginBottom: "10px",
           }}
         >
-          {messages.map((msg) => (
-            <div
-              key={msg.id}
-              style={{
-                marginBottom: "10px",
-                textAlign: msg.sender_id === currentUserId ? "right" : "left",
-                backgroundColor:
-                  msg.sender_id === currentUserId ? "#e3f2fd" : "#f5f5f5",
-                padding: "8px",
-                borderRadius: "4px",
-              }}
-            >
-              <strong>
-                {msg.sender_id === currentUserId
-                  ? "You"
-                  : `User ${msg.sender_id}`}
-                {" → "}
-                {msg.receiver_id === currentUserId
-                  ? "You"
-                  : `User ${msg.receiver_id}`}
-              </strong>
-              {msg.content && <p>{msg.content}</p>}
-              {msg.media_url && (
-                <div>
-                  {msg.media_url.match(/\.(jpg|jpeg|png|gif)$/i) ? (
-                    <img
-                      src={`http://localhost:8080${msg.media_url}`}
-                      alt="attachment"
-                      style={{
-                        maxWidth: "200px",
-                        maxHeight: "200px",
-                        objectFit: "contain",
-                      }}
-                    />
-                  ) : (
-                    <a
-                      href={`http://localhost:8080${msg.media_url}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      Download Attachment
-                    </a>
-                  )}
-                </div>
-              )}
-              <small style={{ color: "#666" }}>
-                {new Date(msg.created_at).toLocaleString()}
-              </small>
-            </div>
-          ))}
+          <div className="messages">
+            {messages.map((message) => (
+              <div key={message.id} data-message-id={message.id}>
+                <Message message={message} currentUser={currentUserId} />
+                {message.media_url && (
+                  <img
+                    src={formatMediaUrl(message.media_url)}
+                    alt="Message attachment"
+                    className="message-image"
+                  />
+                )}
+              </div>
+            ))}
+          </div>
         </div>
 
         <form onSubmit={handleSend}>

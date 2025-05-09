@@ -2,6 +2,7 @@
 package repository
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -58,4 +59,26 @@ func (r *TestMessageRepository) GetMessageHistory(userID int) ([]models.Message,
 		}
 	}
 	return messages, nil
+}
+
+func (r *TestMessageRepository) GetMessageByID(messageID int) (*models.Message, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	if msg, exists := r.messages[messageID]; exists {
+		return msg, nil
+	}
+	return nil, fmt.Errorf("message not found")
+}
+
+func (r *TestMessageRepository) UpdateMessageStatus(messageID int, status models.MessageStatus) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if msg, exists := r.messages[messageID]; exists {
+		msg.Status = status
+		msg.UpdatedAt = time.Now()
+		return nil
+	}
+	return fmt.Errorf("message not found")
 }
