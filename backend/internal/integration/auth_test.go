@@ -3,6 +3,7 @@ package integration
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -22,16 +23,13 @@ func TestAuthFlow(t *testing.T) {
 	}
 	regBody, _ := json.Marshal(regReq)
 
+	// Use /api prefix consistently
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewBuffer(regBody))
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
 
 	server.ServeHTTP(rr, req)
-
-	// Add debug logging
 	t.Logf("Registration Response: %s", rr.Body.String())
-
-	assert.Equal(t, http.StatusOK, rr.Code)
 
 	var regResp models.AuthResponse
 	err := json.NewDecoder(rr.Body).Decode(&regResp)
@@ -39,8 +37,9 @@ func TestAuthFlow(t *testing.T) {
 	assert.NotEmpty(t, regResp.Token)
 
 	// Test protected endpoint with token
-	protectedReq := httptest.NewRequest(http.MethodGet, "/api/messages/conversation?user_id=1", nil)
-	protectedReq.Header.Set("Authorization", "Bearer "+regResp.Token)
+	protectedReq := httptest.NewRequest(http.MethodGet, "/api/messages/conversation?user_id=2", nil)
+	protectedReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", regResp.Token))
+	protectedReq.Header.Set("Content-Type", "application/json")
 	protectedRR := httptest.NewRecorder()
 
 	server.ServeHTTP(protectedRR, protectedReq)

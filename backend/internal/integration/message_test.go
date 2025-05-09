@@ -25,7 +25,11 @@ func TestMessageFlow(t *testing.T) {
 	t.Logf("Send Message Response: %s", resp.Body.String())
 
 	// Get conversation as user2 with user1 (ID 2)
-	messages := getTestConversation(2, user2Token)
+	messages, err := getTestConversation(2, user2Token)
+	if err != nil {
+		t.Fatalf("Failed to get conversation: %v", err)
+	}
+	
 	assert.Len(t, messages, 1)
 	if len(messages) > 0 {
 		assert.Equal(t, "Hello from user1!", messages[0].Content)

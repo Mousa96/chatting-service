@@ -3,11 +3,13 @@ package handler
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"strconv"
 
 	"github.com/Mousa96/chatting-service/internal/message/models"
 	"github.com/Mousa96/chatting-service/internal/message/service"
+	"github.com/Mousa96/chatting-service/internal/middleware"
 )
 
 // Define custom type for context key
@@ -25,8 +27,9 @@ func NewMessageHandler(messageService service.Service) Handler {
 }
 
 func (h *MessageHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
-	userID, ok := r.Context().Value(userIDContextKey).(int)
+	userID, ok := r.Context().Value(middleware.UserIDKey).(int)
 	if !ok {
+		log.Printf("Failed to get userID from context") // Add debug log
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -51,8 +54,9 @@ func (h *MessageHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *MessageHandler) GetConversation(w http.ResponseWriter, r *http.Request) {
-	userID, ok := r.Context().Value(userIDContextKey).(int)
+	userID, ok := r.Context().Value(middleware.UserIDKey).(int)
 	if !ok {
+		log.Printf("Failed to get userID from context") // Add debug log
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}

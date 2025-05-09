@@ -18,7 +18,11 @@ import (
 	"github.com/Mousa96/chatting-service/internal/middleware"
 )
 
-var testDB *sql.DB
+var (
+	testDB     *sql.DB
+	testJWTKey = []byte("test-jwt-key-for-integration")
+	testServer *http.ServeMux
+)
 
 func TestMain(m *testing.M) {
 	// Setup test database
@@ -43,6 +47,9 @@ func TestMain(m *testing.M) {
 		log.Fatal("Could not initialize test database connection:", err)
 	}
 
+	// Initialize test server once
+	testServer = setupTestServer(testDB)
+
 	// Run tests
 	code := m.Run()
 
@@ -52,7 +59,7 @@ func TestMain(m *testing.M) {
 	}
 
 	// Clean up database by truncating all tables
-	cleanupDB := func() error {
+	cleanupDB := func(dbConfig *db.Config) error {
 		db, err := db.NewConnection(dbConfig)
 		if err != nil {
 			return err
@@ -70,7 +77,7 @@ func TestMain(m *testing.M) {
 		return err
 	}
 
-	if err := cleanupDB(); err != nil {
+	if err := cleanupDB(dbConfig); err != nil {
 		log.Printf("Failed to cleanup test database: %v", err)
 	}
 
@@ -78,24 +85,24 @@ func TestMain(m *testing.M) {
 }
 
 func setupTestServer(db *sql.DB) *http.ServeMux {
+	mux := http.NewServeMux()
+	
 	// Initialize repositories
 	userRepo := authRepo.NewUserRepository(db)
 	messageRepo := msgRepo.NewMessageRepository(db)
 
-	// Initialize services
-	jwtKey := []byte("test-key")
-	authSvc := authService.NewAuthService(userRepo, jwtKey)
+	// Initialize services with the same JWT key
+	authSvc := authService.NewAuthService(userRepo, testJWTKey)
 	messageSvc := msgService.NewMessageService(messageRepo)
 
 	// Initialize handlers
 	authHdlr := authHandler.NewAuthHandler(authSvc)
 	messageHdlr := msgHandler.NewMessageHandler(messageSvc)
 
-	// Initialize middleware
-	authMiddleware := middleware.AuthMiddleware(jwtKey)
+	// Auth middleware with same JWT key
+	authMiddleware := middleware.AuthMiddleware(testJWTKey)
 
-	// Setup routes
-	mux := http.NewServeMux()
+	// Register routes with exact paths
 	mux.HandleFunc("/api/auth/register", authHdlr.Register)
 	mux.HandleFunc("/api/auth/login", authHdlr.Login)
 	mux.Handle("/api/messages", authMiddleware(http.HandlerFunc(messageHdlr.SendMessage)))

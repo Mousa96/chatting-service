@@ -5,18 +5,22 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 
-	"github.com/Mousa96/chatting-service/internal/auth/models"
+	authModels "github.com/Mousa96/chatting-service/internal/auth/models"
 	msgModels "github.com/Mousa96/chatting-service/internal/message/models"
 )
+
+const baseURL = "http://localhost:8080/api"
+
 
 // setupTestUser creates a new test user and returns their authentication token
 func setupTestUser(username, password string) string {
 	server := setupTestServer(testDB)
 
-	regReq := models.CreateUserRequest{
+	regReq := authModels.CreateUserRequest{
 		Username: username,
 		Password: password,
 	}
@@ -31,7 +35,7 @@ func setupTestUser(username, password string) string {
 
 	server.ServeHTTP(rr, req)
 
-	var resp models.AuthResponse
+	var resp authModels.AuthResponse
 	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
 		panic(err)
 	}
@@ -55,18 +59,31 @@ func sendTestMessage(req msgModels.CreateMessageRequest, token string) *httptest
 	return rr
 }
 
-func getTestConversation(otherUserID int, token string) []msgModels.Message {
+func makeAuthenticatedRequest(method, path, token string, body io.Reader) (*httptest.ResponseRecorder, error) {
 	server := setupTestServer(testDB)
-
-	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/messages/conversation?user_id=%d", otherUserID), nil)
+	
+	req := httptest.NewRequest(method, path, body)
 	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	
 	rr := httptest.NewRecorder()
-
 	server.ServeHTTP(rr, req)
+	return rr, nil
+}
+
+func getTestConversation(userID int, token string) ([]msgModels.Message, error) {
+	rr, err := makeAuthenticatedRequest("GET", fmt.Sprintf("/api/messages/conversation?user_id=%d", userID), token, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if rr.Code != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code: %d, body: %s", rr.Code, rr.Body.String())
+	}
 
 	var messages []msgModels.Message
 	if err := json.NewDecoder(rr.Body).Decode(&messages); err != nil {
-		panic(err)
+		return nil, err
 	}
-	return messages
+	return messages, nil
 }
