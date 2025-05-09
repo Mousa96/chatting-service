@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/Mousa96/chatting-service/internal/message/models"
+	"github.com/Mousa96/chatting-service/internal/middleware"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -28,77 +29,64 @@ func (m *mockService) GetConversation(userID1, userID2 int) ([]models.Message, e
 }
 
 func TestSendMessage(t *testing.T) {
-	mockSvc := new(mockService)
-	handler := NewMessageHandler(mockSvc)
-
 	tests := []struct {
-		name         string
-		userID       int
-		request      models.CreateMessageRequest
-		expectedMsg  *models.Message
-		expectedCode int
+		name string
+		req  models.CreateMessageRequest
 	}{
 		{
-			name:   "Valid message",
-			userID: 1,
-			request: models.CreateMessageRequest{
+			name: "Valid message",
+			req: models.CreateMessageRequest{
 				ReceiverID: 2,
 				Content:    "Hello!",
 			},
-			expectedMsg: &models.Message{
-				SenderID:   1,
-				ReceiverID: 2,
-				Content:    "Hello!",
-			},
-			expectedCode: http.StatusOK,
 		},
 		{
-			name:   "Message with media",
-			userID: 1,
-			request: models.CreateMessageRequest{
+			name: "Message with media",
+			req: models.CreateMessageRequest{
 				ReceiverID: 2,
 				Content:    "Check this out",
 				MediaURL:   "http://example.com/image.jpg",
 			},
-			expectedMsg: &models.Message{
-				SenderID:   1,
-				ReceiverID: 2,
-				Content:    "Check this out",
-				MediaURL:   "http://example.com/image.jpg",
-			},
-			expectedCode: http.StatusOK,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Setup mock expectation
-			mockSvc.On("SendMessage", tt.userID, &tt.request).Return(tt.expectedMsg, nil)
+			mockService := new(mockService)
+			handler := NewMessageHandler(mockService)
 
-			// Create request with body
-			body, _ := json.Marshal(tt.request)
-			req := httptest.NewRequest(http.MethodPost, "/messages", bytes.NewBuffer(body))
-
-			// Add userID to context using the same key as middleware
-			ctx := context.WithValue(req.Context(), userIDContextKey, tt.userID)
+			// Create request with context containing user ID
+			body, _ := json.Marshal(tt.req)
+			req := httptest.NewRequest(http.MethodPost, "/api/messages", bytes.NewBuffer(body))
+			
+			// Add user ID to context
+			ctx := context.WithValue(req.Context(), middleware.UserIDKey, 1)
 			req = req.WithContext(ctx)
-
+			
 			rr := httptest.NewRecorder()
+			
+			// Set up expectations
+			mockService.On("SendMessage", 1, &tt.req).Return(&models.Message{
+				ID:         1,
+				SenderID:   1,
+				ReceiverID: tt.req.ReceiverID,
+				Content:    tt.req.Content,
+				MediaURL:   tt.req.MediaURL,
+			}, nil)
+
 			handler.SendMessage(rr, req)
+			
+			assert.Equal(t, http.StatusOK, rr.Code)
 
-			assert.Equal(t, tt.expectedCode, rr.Code)
+			var response models.Message
+			err := json.NewDecoder(rr.Body).Decode(&response)
+			assert.NoError(t, err)
+			assert.Equal(t, 1, response.SenderID)
+			assert.Equal(t, tt.req.ReceiverID, response.ReceiverID)
+			assert.Equal(t, tt.req.Content, response.Content)
+			assert.Equal(t, tt.req.MediaURL, response.MediaURL)
 
-			if tt.expectedCode == http.StatusOK {
-				var response models.Message
-				err := json.NewDecoder(rr.Body).Decode(&response)
-				assert.NoError(t, err)
-				assert.Equal(t, tt.expectedMsg.SenderID, response.SenderID)
-				assert.Equal(t, tt.expectedMsg.ReceiverID, response.ReceiverID)
-				assert.Equal(t, tt.expectedMsg.Content, response.Content)
-				assert.Equal(t, tt.expectedMsg.MediaURL, response.MediaURL)
-			}
-
-			mockSvc.AssertExpectations(t)
+			mockService.AssertExpectations(t)
 		})
 	}
 }
@@ -150,8 +138,10 @@ func TestGetConversation(t *testing.T) {
 				mockSvc.On("GetConversation", tt.userID, tt.expectedID).Return(tt.messages, nil)
 			}
 
-			req := httptest.NewRequest(http.MethodGet, "/messages/conversation?user_id="+tt.otherUserID, nil)
-			ctx := context.WithValue(req.Context(), userIDContextKey, tt.userID)
+			req := httptest.NewRequest(http.MethodGet, "/api/messages/conversation?user_id="+tt.otherUserID, nil)
+			
+			// Add user ID to context
+			ctx := context.WithValue(req.Context(), middleware.UserIDKey, tt.userID)
 			req = req.WithContext(ctx)
 
 			rr := httptest.NewRecorder()
