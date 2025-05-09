@@ -21,7 +21,11 @@ func NewMessageHandler(messageService service.Service) Handler {
 }
 
 func (h *MessageHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
-	userID := r.Context().Value("user_id").(int)
+	userID, ok := r.Context().Value("user_id").(int)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
 
 	var req models.CreateMessageRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -36,10 +40,7 @@ func (h *MessageHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(msg); err != nil {
-		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
-		return
-	}
+	json.NewEncoder(w).Encode(msg)
 }
 
 func (h *MessageHandler) GetConversation(w http.ResponseWriter, r *http.Request) {
