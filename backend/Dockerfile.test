@@ -1,0 +1,12 @@
+FROM golang:1.22
+
+WORKDIR /app
+
+# Copy source code first
+COPY . .
+
+# Download dependencies
+RUN go mod download
+
+# Run tests (using the existing migrations in internal/db)
+CMD ["go", "test", "./internal/integration/...", "-v"]
