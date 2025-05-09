@@ -80,7 +80,7 @@ func TestSendMessage(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/messages", bytes.NewBuffer(body))
 
 			// Add userID to context using the same key as middleware
-			ctx := context.WithValue(req.Context(), "user_id", tt.userID)
+			ctx := context.WithValue(req.Context(), userIDContextKey, tt.userID)
 			req = req.WithContext(ctx)
 
 			rr := httptest.NewRecorder()
@@ -151,7 +151,7 @@ func TestGetConversation(t *testing.T) {
 			}
 
 			req := httptest.NewRequest(http.MethodGet, "/messages/conversation?user_id="+tt.otherUserID, nil)
-			ctx := context.WithValue(req.Context(), "user_id", tt.userID)
+			ctx := context.WithValue(req.Context(), userIDContextKey, tt.userID)
 			req = req.WithContext(ctx)
 
 			rr := httptest.NewRecorder()

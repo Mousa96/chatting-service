@@ -10,6 +10,10 @@ import (
 	"github.com/Mousa96/chatting-service/internal/message/service"
 )
 
+// Define custom type for context key
+type contextKey string
+const userIDContextKey = contextKey("user_id")
+
 // MessageHandler provides the implementation of the Handler interface
 type MessageHandler struct {
 	messageService service.Service
@@ -21,7 +25,7 @@ func NewMessageHandler(messageService service.Service) Handler {
 }
 
 func (h *MessageHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
-	userID, ok := r.Context().Value("user_id").(int)
+	userID, ok := r.Context().Value(userIDContextKey).(int)
 	if !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
@@ -40,11 +44,19 @@ func (h *MessageHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(msg)
+	if err := json.NewEncoder(w).Encode(msg); err != nil {
+		http.Error(w, "failed to encode response", http.StatusInternalServerError)
+		return
+	}
 }
 
 func (h *MessageHandler) GetConversation(w http.ResponseWriter, r *http.Request) {
-	userID := r.Context().Value("user_id").(int)
+	userID, ok := r.Context().Value(userIDContextKey).(int)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	otherUserID := r.URL.Query().Get("user_id")
 
 	otherID, err := strconv.Atoi(otherUserID)
@@ -61,7 +73,7 @@ func (h *MessageHandler) GetConversation(w http.ResponseWriter, r *http.Request)
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(messages); err != nil {
-		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		http.Error(w, "failed to encode response", http.StatusInternalServerError)
 		return
 	}
 }
