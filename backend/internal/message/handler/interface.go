@@ -13,4 +13,6 @@ type Handler interface {
 	UploadMedia(w http.ResponseWriter, r *http.Request)
 	// BroadcastMessage handles the broadcast message request
 	BroadcastMessage(w http.ResponseWriter, r *http.Request)
+	// GetMessageHistory retrieves the message history
+	GetMessageHistory(w http.ResponseWriter, r *http.Request)
 }

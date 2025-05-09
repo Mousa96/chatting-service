@@ -49,3 +49,13 @@ func (r *TestMessageRepository) GetConversation(userID1, userID2 int) ([]models.
 
 	return conversation, nil
 }
+
+func (r *TestMessageRepository) GetMessageHistory(userID int) ([]models.Message, error) {
+	var messages []models.Message
+	for _, msg := range r.messages {
+		if msg.SenderID == userID || msg.ReceiverID == userID {
+			messages = append(messages, *msg)
+		}
+	}
+	return messages, nil
+}

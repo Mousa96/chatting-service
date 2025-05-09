@@ -17,4 +17,6 @@ type Service interface {
 	UploadMedia(userID int, file *multipart.FileHeader) (string, error)
 	// BroadcastMessage broadcasts a message to all users
 	BroadcastMessage(senderID int, req *models.BroadcastMessageRequest) ([]*models.Message, error)
+	// GetMessageHistory retrieves the message history for a user
+	GetMessageHistory(userID int) ([]models.Message, error)
 }

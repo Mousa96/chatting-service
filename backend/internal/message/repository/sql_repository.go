@@ -3,6 +3,7 @@ package repository
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
 
 	"github.com/Mousa96/chatting-service/internal/message/models"
@@ -57,4 +58,41 @@ func (r *SQLMessageRepository) GetConversation(userID1, userID2 int) ([]models.M
 	}
 
 	return messages, nil
+}
+
+func (r *SQLMessageRepository) GetMessageHistory(userID int) ([]models.Message, error) {
+    query := `
+        SELECT id, sender_id, receiver_id, content, media_url, created_at 
+        FROM messages 
+        WHERE sender_id = $1 OR receiver_id = $1 
+        ORDER BY created_at DESC`
+
+    rows, err := r.db.Query(query, userID)
+    if err != nil {
+        return nil, fmt.Errorf("failed to get message history: %w", err)
+    }
+    defer rows.Close()
+
+    var messages []models.Message
+    for rows.Next() {
+        var msg models.Message
+        err := rows.Scan(
+            &msg.ID,
+            &msg.SenderID,
+            &msg.ReceiverID,
+            &msg.Content,
+            &msg.MediaURL,
+            &msg.CreatedAt,
+        )
+        if err != nil {
+            return nil, fmt.Errorf("failed to scan message: %w", err)
+        }
+        messages = append(messages, msg)
+    }
+
+    if messages == nil {
+        messages = []models.Message{} // Return empty slice instead of nil
+    }
+
+    return messages, nil
 }

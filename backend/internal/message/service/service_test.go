@@ -200,6 +200,87 @@ func TestBroadcastMessage(t *testing.T) {
 	}
 }
 
+func TestGetMessageHistory(t *testing.T) {
+	repo := repository.NewTestMessageRepository()
+	mockStorage := new(mockStorage)
+	messageService := NewMessageService(repo, mockStorage)
+
+	// Setup test messages
+	messages := []models.Message{
+		{
+			SenderID:   1,
+			ReceiverID: 2,
+			Content:    "Hello from 1 to 2",
+		},
+		{
+			SenderID:   2,
+			ReceiverID: 1,
+			Content:    "Hi back from 2",
+		},
+		{
+			SenderID:   1,
+			ReceiverID: 3,
+			Content:    "Hello 3",
+		},
+		{
+			SenderID:   3,
+			ReceiverID: 1,
+			Content:    "Hi from 3",
+		},
+	}
+
+	for _, msg := range messages {
+		if err := repo.Create(&msg); err != nil {
+			t.Fatalf("Failed to create test message: %v", err)
+		}
+	}
+
+	tests := []struct {
+		name        string
+		userID      int
+		expectedLen int
+		wantErr     bool
+	}{
+		{
+			name:        "Get user 1's messages",
+			userID:      1,
+			expectedLen: 4, // 2 sent + 2 received
+			wantErr:     false,
+		},
+		{
+			name:        "Get user 2's messages",
+			userID:      2,
+			expectedLen: 2, // 1 sent + 1 received
+			wantErr:     false,
+		},
+		{
+			name:        "Get non-existent user's messages",
+			userID:      999,
+			expectedLen: 0,
+			wantErr:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			messages, err := messageService.GetMessageHistory(tt.userID)
+
+			if tt.wantErr {
+				assert.Error(t, err)
+				return
+			}
+
+			assert.NoError(t, err)
+			assert.Len(t, messages, tt.expectedLen)
+
+			// Verify all messages involve the user
+			for _, msg := range messages {
+				assert.True(t, msg.SenderID == tt.userID || msg.ReceiverID == tt.userID)
+			}
+		})
+	}
+}
+
 // Add mock storage
 type mockStorage struct {
 	mock.Mock

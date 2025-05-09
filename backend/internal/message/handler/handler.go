@@ -184,3 +184,25 @@ func (h *MessageHandler) BroadcastMessage(w http.ResponseWriter, r *http.Request
 		"messages": messages,
 	})
 }
+
+func (h *MessageHandler) GetMessageHistory(w http.ResponseWriter, r *http.Request) {
+	// Get user ID from context
+	userID, ok := r.Context().Value(middleware.UserIDKey).(int)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// Get message history
+	messages, err := h.messageService.GetMessageHistory(userID)
+	if err != nil {
+		http.Error(w, "failed to get message history", http.StatusInternalServerError)
+		return
+	}
+
+	// Return response
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"messages": messages,
+	})
+}

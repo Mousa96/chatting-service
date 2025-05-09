@@ -9,4 +9,6 @@ type Repository interface {
 	Create(msg *models.Message) error
 	// GetConversation retrieves all messages between two users
 	GetConversation(userID1, userID2 int) ([]models.Message, error)
+	// GetMessageHistory retrieves the message history for a user
+	GetMessageHistory(userID int) ([]models.Message, error)
 }

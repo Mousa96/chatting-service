@@ -93,3 +93,7 @@ func (s *MessageService) BroadcastMessage(senderID int, req *models.BroadcastMes
 
 	return messages, nil
 }
+
+func (s *MessageService) GetMessageHistory(userID int) ([]models.Message, error) {
+	return s.messageRepo.GetMessageHistory(userID)
+}

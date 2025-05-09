@@ -123,3 +123,23 @@ func TestBroadcastMessage(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, response.Messages, len(req.ReceiverIDs))
 }
+
+func TestGetMessageHistory(t *testing.T) {
+	// Setup user and get token
+	userToken := setupTestUser("historyuser", "pass123")
+
+	// Make request
+	req := httptest.NewRequest(http.MethodGet, "/api/messages/history", nil)
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", userToken))
+
+	rr := httptest.NewRecorder()
+	testServer.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+
+	var response struct {
+		Messages []msgModels.Message `json:"messages"`
+	}
+	err := json.NewDecoder(rr.Body).Decode(&response)
+	require.NoError(t, err)
+}

@@ -88,6 +88,7 @@ func main() {
 	messageMux.HandleFunc("/api/messages/conversation", messageHdlr.GetConversation)
 	messageMux.HandleFunc("/api/messages/upload", messageHdlr.UploadMedia)
 	messageMux.HandleFunc("/api/messages/broadcast", messageHdlr.BroadcastMessage)
+	messageMux.HandleFunc("/api/messages/history", messageHdlr.GetMessageHistory)
 
 	// Apply middleware to protected routes
 	mux.Handle("/api/messages", authMiddleware(messageMux))

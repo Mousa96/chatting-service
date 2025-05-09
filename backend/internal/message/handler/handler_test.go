@@ -44,6 +44,11 @@ func (m *mockService) BroadcastMessage(senderID int, req *models.BroadcastMessag
 	return args.Get(0).([]*models.Message), args.Error(1)
 }
 
+func (m *mockService) GetMessageHistory(userID int) ([]models.Message, error) {
+	args := m.Called(userID)
+	return args.Get(0).([]models.Message), args.Error(1)
+}
+
 func TestSendMessage(t *testing.T) {
 	tests := []struct {
 		name string
@@ -318,6 +323,61 @@ func TestBroadcastMessage(t *testing.T) {
 			handler.BroadcastMessage(rr, req)
 
 			assert.Equal(t, tt.expectedCode, rr.Code)
+			mockService.AssertExpectations(t)
+		})
+	}
+}
+
+func TestGetMessageHistory(t *testing.T) {
+	tests := []struct {
+		name         string
+		userID       int
+		setupMock    func(*mockService)
+		expectedCode int
+	}{
+		{
+			name:   "Valid request",
+			userID: 1,
+			setupMock: func(ms *mockService) {
+				ms.On("GetMessageHistory", 1).Return([]models.Message{
+					{ID: 1, SenderID: 1, ReceiverID: 2, Content: "Hello"},
+					{ID: 2, SenderID: 2, ReceiverID: 1, Content: "Hi"},
+				}, nil)
+			},
+			expectedCode: http.StatusOK,
+		},
+		{
+			name:   "Empty history",
+			userID: 2,
+			setupMock: func(ms *mockService) {
+				ms.On("GetMessageHistory", 2).Return([]models.Message{}, nil)
+			},
+			expectedCode: http.StatusOK,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockService := new(mockService)
+			if tt.setupMock != nil {
+				tt.setupMock(mockService)
+			}
+			handler := NewMessageHandler(mockService)
+
+			req := httptest.NewRequest(http.MethodGet, "/api/messages/history", nil)
+			req = req.WithContext(context.WithValue(req.Context(), middleware.UserIDKey, tt.userID))
+			
+			rr := httptest.NewRecorder()
+			handler.GetMessageHistory(rr, req)
+
+			assert.Equal(t, tt.expectedCode, rr.Code)
+			if tt.expectedCode == http.StatusOK {
+				var response struct {
+					Messages []models.Message `json:"messages"`
+				}
+				err := json.NewDecoder(rr.Body).Decode(&response)
+				assert.NoError(t, err)
+			}
 			mockService.AssertExpectations(t)
 		})
 	}
