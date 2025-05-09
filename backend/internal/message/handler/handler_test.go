@@ -9,29 +9,44 @@ import (
 	"testing"
 
 	"github.com/Mousa96/chatting-service/internal/message/models"
-	"github.com/Mousa96/chatting-service/internal/message/repository"
-	"github.com/Mousa96/chatting-service/internal/message/service"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 )
 
-type contextKey string
-const userIDKey = contextKey("user_id")
+type mockService struct {
+	mock.Mock
+}
+
+func (m *mockService) SendMessage(senderID int, req *models.CreateMessageRequest) (*models.Message, error) {
+	args := m.Called(senderID, req)
+	return args.Get(0).(*models.Message), args.Error(1)
+}
+
+func (m *mockService) GetConversation(userID1, userID2 int) ([]models.Message, error) {
+	args := m.Called(userID1, userID2)
+	return args.Get(0).([]models.Message), args.Error(1)
+}
 
 func TestSendMessage(t *testing.T) {
-	repo := repository.NewTestMessageRepository()
-	messageService := service.NewMessageService(repo)
-	handler := NewMessageHandler(messageService)
+	mockSvc := new(mockService)
+	handler := NewMessageHandler(mockSvc)
 
 	tests := []struct {
 		name         string
 		userID       int
 		request      models.CreateMessageRequest
+		expectedMsg  *models.Message
 		expectedCode int
 	}{
 		{
 			name:   "Valid message",
 			userID: 1,
 			request: models.CreateMessageRequest{
+				ReceiverID: 2,
+				Content:    "Hello!",
+			},
+			expectedMsg: &models.Message{
+				SenderID:   1,
 				ReceiverID: 2,
 				Content:    "Hello!",
 			},
@@ -45,17 +60,27 @@ func TestSendMessage(t *testing.T) {
 				Content:    "Check this out",
 				MediaURL:   "http://example.com/image.jpg",
 			},
+			expectedMsg: &models.Message{
+				SenderID:   1,
+				ReceiverID: 2,
+				Content:    "Check this out",
+				MediaURL:   "http://example.com/image.jpg",
+			},
 			expectedCode: http.StatusOK,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body, _ := json.Marshal(tt.request)
-			req := httptest.NewRequest(http.MethodPost, "/api/messages", bytes.NewBuffer(body))
+			// Setup mock expectation
+			mockSvc.On("SendMessage", tt.userID, &tt.request).Return(tt.expectedMsg, nil)
 
-			// Add user_id to context
-			ctx := context.WithValue(req.Context(), userIDKey, tt.userID)
+			// Create request with body
+			body, _ := json.Marshal(tt.request)
+			req := httptest.NewRequest(http.MethodPost, "/messages", bytes.NewBuffer(body))
+
+			// Add userID to context using the same key as middleware
+			ctx := context.WithValue(req.Context(), "user_id", tt.userID)
 			req = req.WithContext(ctx)
 
 			rr := httptest.NewRecorder()
@@ -67,76 +92,66 @@ func TestSendMessage(t *testing.T) {
 				var response models.Message
 				err := json.NewDecoder(rr.Body).Decode(&response)
 				assert.NoError(t, err)
-				assert.Equal(t, tt.userID, response.SenderID)
-				assert.Equal(t, tt.request.ReceiverID, response.ReceiverID)
-				assert.Equal(t, tt.request.Content, response.Content)
-				assert.Equal(t, tt.request.MediaURL, response.MediaURL)
+				assert.Equal(t, tt.expectedMsg.SenderID, response.SenderID)
+				assert.Equal(t, tt.expectedMsg.ReceiverID, response.ReceiverID)
+				assert.Equal(t, tt.expectedMsg.Content, response.Content)
+				assert.Equal(t, tt.expectedMsg.MediaURL, response.MediaURL)
 			}
+
+			mockSvc.AssertExpectations(t)
 		})
 	}
 }
 
 func TestGetConversation(t *testing.T) {
-	repo := repository.NewTestMessageRepository()
-	messageService := service.NewMessageService(repo)
-	handler := NewMessageHandler(messageService)
+	mockSvc := new(mockService)
+	handler := NewMessageHandler(mockSvc)
 
-	// Setup test messages
 	messages := []models.Message{
-		{
-			SenderID:   1,
-			ReceiverID: 2,
-			Content:    "Hello from 1",
-		},
-		{
-			SenderID:   2,
-			ReceiverID: 1,
-			Content:    "Hi from 2",
-		},
-	}
-
-	for _, msg := range messages {
-		if err := repo.Create(&msg); err != nil {
-			t.Fatalf("Failed to create test message: %v", err)
-		}
+		{SenderID: 1, ReceiverID: 2, Content: "Hello"},
+		{SenderID: 2, ReceiverID: 1, Content: "Hi"},
 	}
 
 	tests := []struct {
 		name         string
 		userID       int
 		otherUserID  string
+		expectedID   int
+		messages     []models.Message
 		expectedCode int
-		expectedMsgs int
 	}{
 		{
 			name:         "Valid conversation",
 			userID:       1,
 			otherUserID:  "2",
+			expectedID:   2,
+			messages:     messages,
 			expectedCode: http.StatusOK,
-			expectedMsgs: 2,
 		},
 		{
 			name:         "Invalid user ID",
 			userID:       1,
 			otherUserID:  "invalid",
 			expectedCode: http.StatusBadRequest,
-			expectedMsgs: 0,
 		},
 		{
 			name:         "Empty conversation",
 			userID:       1,
 			otherUserID:  "3",
+			expectedID:   3,
+			messages:     []models.Message{},
 			expectedCode: http.StatusOK,
-			expectedMsgs: 0,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, "/api/messages/conversation?user_id="+tt.otherUserID, nil)
+			if tt.expectedCode == http.StatusOK {
+				mockSvc.On("GetConversation", tt.userID, tt.expectedID).Return(tt.messages, nil)
+			}
 
-			// Add user_id to context
-			ctx := context.WithValue(req.Context(), userIDKey, tt.userID)
+			req := httptest.NewRequest(http.MethodGet, "/messages/conversation?user_id="+tt.otherUserID, nil)
+			ctx := context.WithValue(req.Context(), "user_id", tt.userID)
 			req = req.WithContext(ctx)
 
 			rr := httptest.NewRecorder()
@@ -148,8 +163,10 @@ func TestGetConversation(t *testing.T) {
 				var response []models.Message
 				err := json.NewDecoder(rr.Body).Decode(&response)
 				assert.NoError(t, err)
-				assert.Len(t, response, tt.expectedMsgs)
+				assert.Equal(t, tt.messages, response)
 			}
+
+			mockSvc.AssertExpectations(t)
 		})
 	}
 }
