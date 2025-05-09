@@ -9,6 +9,8 @@ services:
       - GO_ENV=development
     depends_on:
       - db
+    volumes:
+      - upload_data:/app/uploads
 
   frontend:
     build:
@@ -32,3 +34,4 @@ services:
 
 volumes:
   postgres_data:
+  upload_data:

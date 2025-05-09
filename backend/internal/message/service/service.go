@@ -107,14 +107,21 @@ func (s *MessageService) GetMessageHistory(userID int) ([]models.Message, error)
 	return s.messageRepo.GetMessageHistory(userID)
 }
 
-func (s *MessageService) UpdateMessageStatus(messageID int, status models.MessageStatus) error {
-	if status != models.StatusDelivered && status != models.StatusRead && status != models.StatusSent {
+func (s *MessageService) UpdateMessageStatus(messageID int, status models.MessageStatus, userID int) error {
+	// Validate status first
+	if !status.IsValid() {
 		return fmt.Errorf("invalid status: %s", status)
 	}
 
 	// Verify message exists
-	if _, err := s.messageRepo.GetMessageByID(messageID); err != nil {
+	message, err := s.messageRepo.GetMessageByID(messageID)
+	if err != nil {
 		return fmt.Errorf("failed to find message: %w", err)
+	}
+
+	// Only the receiver should be able to update message status
+	if message.ReceiverID != userID {
+		return fmt.Errorf("not authorized to update this message status")
 	}
 
 	// Update the status

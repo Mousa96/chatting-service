@@ -49,8 +49,8 @@ func (m *mockService) GetMessageHistory(userID int) ([]models.Message, error) {
 	return args.Get(0).([]models.Message), args.Error(1)
 }
 
-func (m *mockService) UpdateMessageStatus(messageID int, status models.MessageStatus) error {
-	args := m.Called(messageID, status)
+func (m *mockService) UpdateMessageStatus(messageID int, status models.MessageStatus, userID int) error {
+	args := m.Called(messageID, status, userID)
 	return args.Error(0)
 }
 

@@ -20,5 +20,5 @@ type Service interface {
 	// GetMessageHistory retrieves the message history for a user
 	GetMessageHistory(userID int) ([]models.Message, error)
 	// UpdateMessageStatus updates the status of a message
-	UpdateMessageStatus(messageID int, status models.MessageStatus) error
+	UpdateMessageStatus(messageID int, status models.MessageStatus, userID int) error
 }

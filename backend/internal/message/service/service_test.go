@@ -301,31 +301,42 @@ func TestUpdateMessageStatus(t *testing.T) {
 		name          string
 		messageID     int
 		newStatus     models.MessageStatus
+		userID        int
 		expectedError bool
 	}{
 		{
 			name:          "Valid status update to delivered",
 			messageID:     msg.ID,
 			newStatus:     models.StatusDelivered,
+			userID:        2, // Receiver ID
 			expectedError: false,
 		},
 		{
 			name:          "Valid status update to read",
 			messageID:     msg.ID,
 			newStatus:     models.StatusRead,
+			userID:        2, // Receiver ID
 			expectedError: false,
 		},
 		{
 			name:          "Invalid status value",
 			messageID:     msg.ID,
 			newStatus:     "invalid_status",
+			userID:        2,
+			expectedError: true,
+		},
+		{
+			name:          "Unauthorized user",
+			messageID:     msg.ID,
+			newStatus:     models.StatusDelivered,
+			userID:        3, // Not the receiver
 			expectedError: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := messageService.UpdateMessageStatus(tt.messageID, tt.newStatus)
+			err := messageService.UpdateMessageStatus(tt.messageID, tt.newStatus, tt.userID)
 			if tt.expectedError {
 				assert.Error(t, err)
 			} else {

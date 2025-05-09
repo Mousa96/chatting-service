@@ -3,9 +3,11 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/Mousa96/chatting-service/internal/message/models"
 	"github.com/Mousa96/chatting-service/internal/message/service"
@@ -204,28 +206,60 @@ func (h *MessageHandler) GetMessageHistory(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *MessageHandler) UpdateMessageStatus(w http.ResponseWriter, r *http.Request) {
-	_, ok := r.Context().Value(middleware.UserIDKey).(int)
+	// Get user ID from context
+	userID, ok := r.Context().Value(middleware.UserIDKey).(int)
 	if !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 
+	// Parse request body
 	var req struct {
 		MessageID int    `json:"message_id"`
 		Status    string `json:"status"`
 	}
-	
+
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		log.Printf("Error decoding request body: %v", err)
+		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	if err := h.messageService.UpdateMessageStatus(req.MessageID, models.MessageStatus(req.Status)); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	// Validate message ID
+	if req.MessageID <= 0 {
+		log.Printf("Invalid message ID: %d", req.MessageID)
+		http.Error(w, "invalid message_id", http.StatusBadRequest)
 		return
 	}
 
-	// Return a proper JSON response
+	// Convert string to MessageStatus type and log
+	log.Printf("Status received: '%s'", req.Status)
+	status := models.MessageStatus(req.Status)
+	
+	// Validate status
+	if !status.IsValid() {
+		log.Printf("Invalid status: '%s'", status)
+		http.Error(w, fmt.Sprintf("invalid status: %s", status), http.StatusBadRequest)
+		return
+	}
+
+	// Update message status
+	if err := h.messageService.UpdateMessageStatus(req.MessageID, status, userID); err != nil {
+		log.Printf("Error updating message status: %v, userID: %d, messageID: %d", err, userID, req.MessageID)
+		
+		if strings.Contains(err.Error(), "not authorized") {
+			http.Error(w, err.Error(), http.StatusForbidden)
+			return
+		}
+		if strings.Contains(err.Error(), "not found") {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		http.Error(w, fmt.Sprintf("failed to update message status: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Return success response
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
 		"status": "success",

@@ -10,7 +10,6 @@ import (
 
 	"mime/multipart"
 
-	"github.com/Mousa96/chatting-service/internal/message/models"
 	msgModels "github.com/Mousa96/chatting-service/internal/message/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -146,60 +145,52 @@ func TestGetMessageHistory(t *testing.T) {
 }
 
 func TestMessageStatusUpdate(t *testing.T) {
-	// Setup users
-	senderToken := setupTestUser("sender", "pass123")
-	receiverToken := setupTestUser("receiver", "pass123")
-
-	// Send a test message
-	msgReq := msgModels.CreateMessageRequest{
-		ReceiverID: 3, // receiver's ID
-		Content:    "Test message for status update",
+	// Register sender
+	senderToken := setupTestUser("sender", "password")
+	
+	// Register receiver
+	receiverToken := setupTestUser("receiver", "password")
+	
+	// Create a message from sender to receiver
+	msgContent := "Test message for status update"
+	sendReq := map[string]interface{}{
+		"receiver_id": 8, // ID of receiver
+		"content":     msgContent,
 	}
-	resp := sendTestMessage(msgReq, senderToken)
-	require.Equal(t, http.StatusOK, resp.Code)
-
-	// Parse the message ID from response
-	var msgResp struct {
-		Message struct {
-			ID int `json:"id"`
-		} `json:"message"`
-	}
-	err := json.NewDecoder(resp.Body).Decode(&msgResp)
+	
+	body, err := json.Marshal(sendReq)
 	require.NoError(t, err)
-	messageID := msgResp.Message.ID
-
+	
+	req := httptest.NewRequest(http.MethodPost, "/api/messages", bytes.NewBuffer(body))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", senderToken))
+	req.Header.Set("Content-Type", "application/json")
+	
+	rr := httptest.NewRecorder()
+	testServer.ServeHTTP(rr, req)
+	
+	assert.Equal(t, http.StatusOK, rr.Code)
+	
+	// Get the message ID from response
+	var sendResp map[string]interface{}
+	err = json.Unmarshal(rr.Body.Bytes(), &sendResp)
+	require.NoError(t, err)
+	
+	messageID := int(sendResp["id"].(float64))
+	require.NotEqual(t, 0, messageID, "Message ID should not be 0")
+	
+	// Now run your status update tests with this messageID
 	tests := []struct {
 		name         string
 		token        string
 		status       string
 		expectedCode int
 	}{
-		{
-			name:         "Mark as delivered by receiver",
-			token:        receiverToken,
-			status:       string(models.StatusDelivered),
-			expectedCode: http.StatusOK,
-		},
-		{
-			name:         "Mark as read by receiver",
-			token:        receiverToken,
-			status:       string(models.StatusRead),
-			expectedCode: http.StatusOK,
-		},
-		{
-			name:         "Attempt update by sender",
-			token:        senderToken,
-			status:       string(models.StatusDelivered),
-			expectedCode: http.StatusBadRequest,
-		},
-		{
-			name:         "Invalid status",
-			token:        receiverToken,
-			status:       "invalid_status",
-			expectedCode: http.StatusBadRequest,
-		},
+		{"Mark_as_delivered_by_receiver", receiverToken, "delivered", http.StatusOK},
+		{"Mark_as_read_by_receiver", receiverToken, "read", http.StatusOK},
+		{"Attempt_update_by_sender", senderToken, "delivered", http.StatusForbidden},
+		{"Invalid_status", receiverToken, "invalid", http.StatusBadRequest},
 	}
-
+	
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			updateReq := struct {

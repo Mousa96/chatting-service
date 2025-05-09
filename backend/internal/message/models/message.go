@@ -30,3 +30,13 @@ type CreateMessageRequest struct {
 	Content    string `json:"content" validate:"required"`
 	MediaURL   string `json:"media_url,omitempty"`
 }
+
+// IsValid checks if the message status is valid
+func (s MessageStatus) IsValid() bool {
+	switch s {
+	case StatusSent, StatusDelivered, StatusRead:
+		return true
+	default:
+		return false
+	}
+}
