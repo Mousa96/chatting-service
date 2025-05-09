@@ -6,6 +6,7 @@ import (
 
 	"github.com/Mousa96/chatting-service/internal/db"
 	"github.com/Mousa96/chatting-service/internal/handler"
+	"github.com/Mousa96/chatting-service/internal/middleware"
 	"github.com/Mousa96/chatting-service/internal/repository"
 	"github.com/Mousa96/chatting-service/internal/service"
 )
@@ -37,25 +38,43 @@ func main() {
 
 	// Initialize repositories
 	userRepo := repository.NewUserRepository(database)
+	messageRepo := repository.NewMessageRepository(database)
 
 	// Initialize services
 	jwtKey := []byte("your-secret-key") // In production, use environment variable
 	authService := service.NewAuthService(userRepo, jwtKey)
+	messageService := service.NewMessageService(messageRepo)
 
 	// Initialize handlers
 	authHandler := handler.NewAuthHandler(authService)
+	messageHandler := handler.NewMessageHandler(messageService)
 
-	// Register routes
-	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+	// Initialize middleware
+	authMiddleware := middleware.AuthMiddleware(jwtKey)
+
+	// Create a new ServeMux for better route handling
+	mux := http.NewServeMux()
+
+	// Public routes
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	})
-	http.HandleFunc("/api/auth/register", authHandler.Register)
-	http.HandleFunc("/api/auth/login", authHandler.Login)
+	mux.HandleFunc("/api/auth/register", authHandler.Register)
+	mux.HandleFunc("/api/auth/login", authHandler.Login)
+
+	// Protected routes
+	messageMux := http.NewServeMux()
+	messageMux.HandleFunc("/api/messages", messageHandler.SendMessage)
+	messageMux.HandleFunc("/api/messages/conversation", messageHandler.GetConversation)
+
+	// Apply middleware to protected routes
+	mux.Handle("/api/messages", authMiddleware(messageMux))
+	mux.Handle("/api/messages/", authMiddleware(messageMux)) // Note the trailing slash
 
 	port := ":8080"
 	log.Printf("Server starting on %s", port)
-	if err := http.ListenAndServe(port, nil); err != nil {
+	if err := http.ListenAndServe(port, mux); err != nil {
 		log.Fatal("Server failed to start:", err)
 	}
 } 
