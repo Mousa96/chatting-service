@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -33,6 +34,14 @@ func (m *mockService) GetConversation(userID1, userID2 int) ([]models.Message, e
 func (m *mockService) UploadMedia(userID int, file *multipart.FileHeader) (string, error) {
 	args := m.Called(userID, file)
 	return args.String(0), args.Error(1)
+}
+
+func (m *mockService) BroadcastMessage(senderID int, req *models.BroadcastMessageRequest) ([]*models.Message, error) {
+	args := m.Called(senderID, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.Message), args.Error(1)
 }
 
 func TestSendMessage(t *testing.T) {
@@ -247,6 +256,68 @@ func TestUploadMedia(t *testing.T) {
 				assert.Contains(t, response.URL, tt.filename)
 			}
 
+			mockService.AssertExpectations(t)
+		})
+	}
+}
+
+func TestBroadcastMessage(t *testing.T) {
+	tests := []struct {
+		name         string
+		userID      int
+		request     models.BroadcastMessageRequest
+		setupMock   func(*mockService)
+		expectedCode int
+	}{
+		{
+			name:    "Valid broadcast",
+			userID: 1,
+			request: models.BroadcastMessageRequest{
+				ReceiverIDs: []int{2, 3, 4},
+				Content:    "Hello everyone!",
+			},
+			setupMock: func(ms *mockService) {
+				ms.On("BroadcastMessage", 1, mock.MatchedBy(func(req *models.BroadcastMessageRequest) bool {
+					return len(req.ReceiverIDs) == 3 && req.Content == "Hello everyone!"
+				})).Return([]*models.Message{
+					{ID: 1, SenderID: 1, ReceiverID: 2, Content: "Hello everyone!"},
+					{ID: 2, SenderID: 1, ReceiverID: 3, Content: "Hello everyone!"},
+					{ID: 3, SenderID: 1, ReceiverID: 4, Content: "Hello everyone!"},
+				}, nil)
+			},
+			expectedCode: http.StatusOK,
+		},
+		{
+			name:    "Empty receivers",
+			userID: 1,
+			request: models.BroadcastMessageRequest{
+				ReceiverIDs: []int{},
+				Content:    "Hello!",
+			},
+			setupMock: func(ms *mockService) {
+				ms.On("BroadcastMessage", 1, mock.Anything).
+					Return(nil, fmt.Errorf("receiver IDs cannot be empty"))
+			},
+			expectedCode: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockService := new(mockService)
+			if tt.setupMock != nil {
+				tt.setupMock(mockService)
+			}
+			handler := NewMessageHandler(mockService)
+
+			body, _ := json.Marshal(tt.request)
+			req := httptest.NewRequest(http.MethodPost, "/api/messages/broadcast", bytes.NewBuffer(body))
+			req = req.WithContext(context.WithValue(req.Context(), middleware.UserIDKey, tt.userID))
+			
+			rr := httptest.NewRecorder()
+			handler.BroadcastMessage(rr, req)
+
+			assert.Equal(t, tt.expectedCode, rr.Code)
 			mockService.AssertExpectations(t)
 		})
 	}

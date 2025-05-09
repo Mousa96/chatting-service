@@ -15,4 +15,6 @@ type Service interface {
 	GetConversation(userID1, userID2 int) ([]models.Message, error)
 	// UploadMedia handles media upload
 	UploadMedia(userID int, file *multipart.FileHeader) (string, error)
+	// BroadcastMessage broadcasts a message to all users
+	BroadcastMessage(senderID int, req *models.BroadcastMessageRequest) ([]*models.Message, error)
 }

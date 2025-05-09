@@ -110,6 +110,7 @@ func setupTestServer(db *sql.DB) *http.ServeMux {
 	mux.Handle("/api/messages", authMiddleware(http.HandlerFunc(messageHdlr.SendMessage)))
 	mux.Handle("/api/messages/conversation", authMiddleware(http.HandlerFunc(messageHdlr.GetConversation)))
 	mux.Handle("/api/messages/upload", authMiddleware(http.HandlerFunc(messageHdlr.UploadMedia)))
+	mux.Handle("/api/messages/broadcast", authMiddleware(http.HandlerFunc(messageHdlr.BroadcastMessage)))
 
 	return mux
 }

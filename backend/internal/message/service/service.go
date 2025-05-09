@@ -64,3 +64,32 @@ func (s *MessageService) UploadMedia(userID int, file *multipart.FileHeader) (st
 
 	return url, nil
 }
+
+func (s *MessageService) BroadcastMessage(senderID int, req *models.BroadcastMessageRequest) ([]*models.Message, error) {
+	if len(req.ReceiverIDs) == 0 {
+		return nil, fmt.Errorf("receiver IDs cannot be empty")
+	}
+	if req.Content == "" {
+		return nil, fmt.Errorf("message content cannot be empty")
+	}
+
+	var messages []*models.Message
+
+	// Create a message for each receiver
+	for _, receiverID := range req.ReceiverIDs {
+		msg := &models.Message{
+			SenderID:   senderID,
+			ReceiverID: receiverID,
+			Content:    req.Content,
+			MediaURL:   req.MediaURL,
+		}
+
+		if err := s.messageRepo.Create(msg); err != nil {
+			return nil, fmt.Errorf("failed to send message to user %d: %w", receiverID, err)
+		}
+
+		messages = append(messages, msg)
+	}
+
+	return messages, nil
+}

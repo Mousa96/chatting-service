@@ -12,6 +12,7 @@ import (
 
 	msgModels "github.com/Mousa96/chatting-service/internal/message/models"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestMessageFlow(t *testing.T) {
@@ -89,4 +90,36 @@ func TestMediaUpload(t *testing.T) {
 	err = json.NewDecoder(rr.Body).Decode(&response)
 	assert.NoError(t, err)
 	assert.Contains(t, response.URL, "uploads/")
+}
+
+func TestBroadcastMessage(t *testing.T) {
+	// Setup sender and get token
+	senderToken := setupTestUser("broadcaster", "pass123")
+
+	// Create broadcast request
+	req := msgModels.BroadcastMessageRequest{
+		ReceiverIDs: []int{2, 3, 4},
+		Content:     "Hello everyone!",
+	}
+
+	body, err := json.Marshal(req)
+	require.NoError(t, err)
+
+	// Make request
+	httpReq := httptest.NewRequest(http.MethodPost, "/api/messages/broadcast", bytes.NewBuffer(body))
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", senderToken))
+
+	rr := httptest.NewRecorder()
+	testServer.ServeHTTP(rr, httpReq)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+
+	// Verify response
+	var response struct {
+		Messages []*msgModels.Message `json:"messages"`
+	}
+	err = json.NewDecoder(rr.Body).Decode(&response)
+	require.NoError(t, err)
+	assert.Len(t, response.Messages, len(req.ReceiverIDs))
 }

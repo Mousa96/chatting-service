@@ -11,4 +11,6 @@ type Handler interface {
 	GetConversation(w http.ResponseWriter, r *http.Request)
 	// UploadMedia handles the media uploading request
 	UploadMedia(w http.ResponseWriter, r *http.Request)
+	// BroadcastMessage handles the broadcast message request
+	BroadcastMessage(w http.ResponseWriter, r *http.Request)
 }

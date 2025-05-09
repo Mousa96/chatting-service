@@ -136,6 +136,70 @@ func TestGetConversation(t *testing.T) {
 	}
 }
 
+func TestBroadcastMessage(t *testing.T) {
+	repo := repository.NewTestMessageRepository()
+	mockStorage := new(mockStorage)
+	messageService := NewMessageService(repo, mockStorage)
+
+	tests := []struct {
+		name        string
+		senderID    int
+		req         *models.BroadcastMessageRequest
+		wantErr     bool
+		expectedLen int
+	}{
+		{
+			name:     "Valid broadcast",
+			senderID: 1,
+			req: &models.BroadcastMessageRequest{
+				ReceiverIDs: []int{2, 3, 4},
+				Content:     "Hello everyone!",
+			},
+			wantErr:     false,
+			expectedLen: 3,
+		},
+		{
+			name:     "Empty receivers",
+			senderID: 1,
+			req: &models.BroadcastMessageRequest{
+				ReceiverIDs: []int{},
+				Content:     "Hello!",
+			},
+			wantErr: true,
+		},
+		{
+			name:     "Empty content",
+			senderID: 1,
+			req: &models.BroadcastMessageRequest{
+				ReceiverIDs: []int{2, 3},
+				Content:     "",
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			messages, err := messageService.BroadcastMessage(tt.senderID, tt.req)
+
+			if tt.wantErr {
+				assert.Error(t, err)
+				return
+			}
+
+			assert.NoError(t, err)
+			assert.Len(t, messages, tt.expectedLen)
+
+			for i, msg := range messages {
+				assert.Equal(t, tt.senderID, msg.SenderID)
+				assert.Equal(t, tt.req.ReceiverIDs[i], msg.ReceiverID)
+				assert.Equal(t, tt.req.Content, msg.Content)
+				assert.Equal(t, tt.req.MediaURL, msg.MediaURL)
+			}
+		})
+	}
+}
+
 // Add mock storage
 type mockStorage struct {
 	mock.Mock
