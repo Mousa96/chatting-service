@@ -17,6 +17,12 @@ func main() {
 		DBName:   "chat_service",
 	}
 
+	// Run migrations
+	if err := db.RunMigrations(dbConfig); err != nil {
+		log.Fatal("Failed to run migrations:", err)
+	}
+	log.Println("Migrations completed successfully")
+
 	// Initialize database connection
 	database, err := db.NewConnection(dbConfig)
 	if err != nil {
