@@ -7,61 +7,8 @@ on:
     branches: [main]
 
 jobs:
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: "1.22"
-      - name: Set Go Environment
-        run: |
-          go env -w GOINSECURE="*"
-          go env -w GONOSUMDB="*"
-          go env -w GOPROXY="direct"
-      - name: Install git
-        run: |
-          apt-get update
-          apt-get install -y git
-      - name: Download Dependencies
-        working-directory: backend
-        run: go mod download
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@v4
-        with:
-          working-directory: backend
-          args: --config=.golangci.yml
-
-  security:
-    name: Security Scan
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: "1.22"
-      - name: Set Go Environment
-        run: |
-          go env -w GOINSECURE="*"
-          go env -w GONOSUMDB="*"
-          go env -w GOPROXY="direct"
-      - name: Install git
-        run: |
-          apt-get update
-          apt-get install -y git
-      - name: Download Dependencies
-        working-directory: backend
-        run: go mod download
-      - name: Run Gosec Security Scanner
-        uses: securego/gosec@master
-        with:
-          args: ./backend/...
-
   test:
-    name: Test
+    name: Test & Lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -69,33 +16,36 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: "1.22"
-      - name: Set Go Environment
-        run: |
-          go env -w GOINSECURE="*"
-          go env -w GONOSUMDB="*"
-          go env -w GOPROXY="direct"
       - name: Install git
         run: |
-          apt-get update
-          apt-get install -y git
+          sudo apt-get update
+          sudo apt-get install -y git
       - name: Download Dependencies
         working-directory: backend
         run: go mod download
       - name: Unit Tests
         working-directory: backend
-        run: |
-          export CGO_ENABLED=1
-          go test -race -v ./...
+        run: go test -race -v ./...
+      - name: Lint
+        uses: golangci/golangci-lint-action@v4
+        with:
+          working-directory: backend
+          args: --config=.golangci.yml
+      - name: Security Scan
+        uses: securego/gosec@master
+        with:
+          args: ./backend/...
 
   integration:
+    needs: test
     name: Integration Tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Install Docker Compose
         run: |
-          apt-get update
-          apt-get install -y docker-compose
+          sudo apt-get update
+          sudo apt-get install -y docker-compose
       - name: Run Integration Tests
         working-directory: backend
-        run: docker-compose -f docker-compose.test.yml up --build --exit-code-from integration-tests
+        run: docker compose -f docker-compose.test.yml up --build --exit-code-from integration-tests
