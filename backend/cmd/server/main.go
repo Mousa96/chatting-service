@@ -2,13 +2,14 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"time"
 
 	authHandler "github.com/Mousa96/chatting-service/internal/auth/handler"
-	authRepo "github.com/Mousa96/chatting-service/internal/auth/repository"
+	authRepository "github.com/Mousa96/chatting-service/internal/auth/repository"
 	authService "github.com/Mousa96/chatting-service/internal/auth/service"
 	"github.com/Mousa96/chatting-service/internal/db"
 	msgHandler "github.com/Mousa96/chatting-service/internal/message/handler"
@@ -16,6 +17,9 @@ import (
 	msgService "github.com/Mousa96/chatting-service/internal/message/service"
 	"github.com/Mousa96/chatting-service/internal/middleware"
 	"github.com/Mousa96/chatting-service/internal/storage"
+	userHandler "github.com/Mousa96/chatting-service/internal/user/handler"
+	userRepository "github.com/Mousa96/chatting-service/internal/user/repository"
+	userService "github.com/Mousa96/chatting-service/internal/user/service"
 	wsHandler "github.com/Mousa96/chatting-service/internal/websocket/handler"
 	wsRepository "github.com/Mousa96/chatting-service/internal/websocket/repository"
 	wsService "github.com/Mousa96/chatting-service/internal/websocket/service"
@@ -37,26 +41,52 @@ func corsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func setupWebSocketRoutes(mux *http.ServeMux, messageSvc msgService.Service, authMiddleware func(http.Handler) http.Handler, jwtKey []byte) {
+func setupWebSocketRoutes(mux *http.ServeMux, messageSvc msgService.Service, authMiddleware func(http.Handler) http.Handler, jwtKey []byte) wsService.Service {
 	// Create repository
 	wsRepo := wsRepository.NewMemoryRepository()
 	
-	// Create service
+	// Create service with correct name
 	wsSvc := wsService.NewWebSocketService(wsRepo, messageSvc)
 	
 	// Create handler
 	wsHandler := wsHandler.NewWebSocketHandler(wsSvc)
 	
-	// Create WebSocket-specific auth middleware that also checks query params
-	wsAuthMiddleware := middleware.WebSocketAuthMiddleware(jwtKey)
-	
 	// Register routes with WebSocket auth middleware
+	wsAuthMiddleware := middleware.WebSocketAuthMiddleware(jwtKey)
 	mux.Handle("/ws", wsAuthMiddleware(http.HandlerFunc(wsHandler.HandleConnection)))
 	mux.Handle("/ws/status", authMiddleware(http.HandlerFunc(wsHandler.GetUserStatus)))
 	mux.Handle("/ws/users", authMiddleware(http.HandlerFunc(wsHandler.GetConnectedUsers)))
+
+	// Return the WebSocket service
+	return wsSvc
 }
 
 func main() {
+	// Add this debugging code at the beginning
+
+	// Create a basic file check
+	staticFilePath := "/app/static/index.html"
+	if _, err := os.Stat(staticFilePath); os.IsNotExist(err) {
+		log.Printf("WARNING: Static file %s does not exist", staticFilePath)
+	} else {
+		log.Printf("Static file %s exists and is accessible", staticFilePath)
+	}
+
+	// Keep only ONE static file handler in your code
+	// If you're using a custom mux (recommended):
+	mux := http.NewServeMux()
+	fs := http.FileServer(http.Dir("/app/static"))
+	mux.Handle("/static/", http.StripPrefix("/static/", fs))
+
+	// Or if using default mux (less recommended):
+	// fs := http.FileServer(http.Dir("/app/static"))
+	// http.Handle("/static/", http.StripPrefix("/static/", fs))
+
+	// Test simple route to verify basic HTTP functionality
+	http.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("pong"))
+	})
+
 	// Database configuration
 	dbConfig := &db.Config{
 		Host:     "db",
@@ -85,30 +115,17 @@ func main() {
 
 	log.Println("Successfully connected to database")
 
-	// Initialize repositories
-	userRepo := authRepo.NewUserRepository(database)
-	messageRepo := msgRepo.NewMessageRepository(database)
+	// Initialize separate repositories for auth and user
+	authRepo := authRepository.NewUserRepository(database)
+	userRepo := userRepository.NewPostgresRepository(database)
 
 	// Initialize storage
 	fileStorage := storage.NewLocalStorage("uploads", "/uploads")
 	
-	// Create a new ServeMux for better route handling
-	mux := http.NewServeMux()
-
-	// Ensure uploads directory exists
-	uploadsDir := "uploads"
-	if err := os.MkdirAll(uploadsDir, 0755); err != nil {
-		log.Fatalf("Failed to create uploads directory: %v", err)
-	}
-
-	// Serve static files
-	fileServer := http.FileServer(http.Dir(uploadsDir))
-	mux.Handle("/api/uploads/", http.StripPrefix("/api/uploads/", fileServer))
-
 	// Initialize services
 	jwtKey := []byte("your-secret-key") // In production, use environment variable
-	authSvc := authService.NewAuthService(userRepo, jwtKey)
-	messageSvc := msgService.NewMessageService(messageRepo, fileStorage)
+	authSvc := authService.NewAuthService(authRepo, jwtKey)
+	messageSvc := msgService.NewMessageService(msgRepo.NewMessageRepository(database), fileStorage)
 
 	// Initialize handlers
 	authHdlr := authHandler.NewAuthHandler(authSvc)
@@ -129,7 +146,7 @@ func main() {
 	// Protected routes
 	messageMux := http.NewServeMux()
 	messageMux.HandleFunc("/", messageHdlr.SendMessage)
-	messageMux.HandleFunc("/conversation", messageHdlr.GetConversation)
+	messageMux.HandleFunc("/conversation/", messageHdlr.GetConversation)
 	messageMux.HandleFunc("/upload", messageHdlr.UploadMedia)
 	messageMux.HandleFunc("/broadcast", messageHdlr.BroadcastMessage)
 	messageMux.HandleFunc("/history", messageHdlr.GetMessageHistory)
@@ -138,8 +155,25 @@ func main() {
 	// Apply middleware to protected routes
 	mux.Handle("/api/messages/", corsMiddleware(authMiddleware(http.StripPrefix("/api/messages", messageMux))))
 
-	// Add websocket routes
-	setupWebSocketRoutes(mux, messageSvc, authMiddleware, jwtKey)
+	// Get websocket service
+	wsSvc := setupWebSocketRoutes(mux, messageSvc, authMiddleware, jwtKey)
+
+	// Initialize user components with the websocket service
+	userSvc := userService.NewUserService(userRepo, wsSvc)
+	userHandler := userHandler.NewUserHandler(userSvc)
+
+	// Set up user routes
+	userMux := http.NewServeMux()
+	userMux.HandleFunc("/", userHandler.GetAllUsers)
+	userMux.HandleFunc("/profile", userHandler.GetUserByID)
+	userMux.HandleFunc("/status", userHandler.UpdateUserStatus)
+
+	// Apply middleware to user routes
+	mux.Handle("/api/users", corsMiddleware(authMiddleware(userMux)))
+	mux.Handle("/api/users/", corsMiddleware(authMiddleware(http.StripPrefix("/api/users", userMux))))
+
+	// Print out the current working directory when the server starts
+	fmt.Println("Current working directory:", currentWorkingDir())
 
 	port := ":8080"
 
@@ -156,4 +190,12 @@ func main() {
 	if err := srv.ListenAndServe(); err != nil {
 		log.Fatal("Server failed to start:", err)
 	}
+}
+
+func currentWorkingDir() string {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "Error getting working directory"
+	}
+	return dir
 }

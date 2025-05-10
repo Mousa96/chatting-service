@@ -56,24 +56,41 @@ func (h *MessageHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *MessageHandler) GetConversation(w http.ResponseWriter, r *http.Request) {
-	userID, ok := r.Context().Value(middleware.UserIDKey).(int)
-	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	// Extract user IDs
+	path := r.URL.Path
+	parts := strings.Split(path, "/")
+	if len(parts) < 2 {
+		http.Error(w, "Invalid path", http.StatusBadRequest)
 		return
 	}
-
-	otherUserID, err := strconv.Atoi(r.URL.Query().Get("user_id"))
+	
+	otherUserIDStr := parts[len(parts)-1]
+	otherUserID, err := strconv.Atoi(otherUserIDStr)
 	if err != nil {
-		http.Error(w, "invalid user_id", http.StatusBadRequest)
+		http.Error(w, "Invalid user ID", http.StatusBadRequest)
 		return
 	}
-
-	messages, err := h.messageService.GetConversation(userID, otherUserID)
+	
+	// Get current user ID from context
+	currentUserID, _ := middleware.GetUserIDFromContext(r.Context())
+	
+	// Get conversation
+	messages, err := h.messageService.GetConversation(currentUserID, otherUserID)
 	if err != nil {
-		http.Error(w, "failed to get conversation", http.StatusInternalServerError)
+		// If no conversation exists, return an empty array instead of an error
+		if strings.Contains(err.Error(), "no conversation") {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"messages": []interface{}{},
+			})
+			return
+		}
+		
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-
+	
+	// Return messages
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"messages": messages,

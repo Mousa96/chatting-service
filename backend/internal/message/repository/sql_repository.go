@@ -20,13 +20,14 @@ func NewMessageRepository(db *sql.DB) Repository {
 }
 
 func (r *SQLMessageRepository) Create(msg *models.Message) error {
-	query := `
-        INSERT INTO messages (sender_id, receiver_id, content, media_url, status)
-        VALUES ($1, $2, $3, $4, $5)
-        RETURNING id, created_at`
+	const query = `
+        INSERT INTO messages (sender_id, receiver_id, content, media_url, status, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        RETURNING id
+    `
 
-	return r.db.QueryRow(query, msg.SenderID, msg.ReceiverID, msg.Content, msg.MediaURL, models.StatusSent).
-		Scan(&msg.ID, &msg.CreatedAt)
+	return r.db.QueryRow(query, msg.SenderID, msg.ReceiverID, msg.Content, msg.MediaURL, models.StatusSent, msg.CreatedAt, msg.UpdatedAt).
+		Scan(&msg.ID)
 }
 
 func (r *SQLMessageRepository) GetConversation(userID1, userID2 int) ([]models.Message, error) {

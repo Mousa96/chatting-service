@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/Mousa96/chatting-service/internal/middleware"
 	"github.com/Mousa96/chatting-service/internal/websocket/service"
 	"github.com/gorilla/websocket"
 )
@@ -86,21 +87,21 @@ func (h *WebSocketHandler) GetUserStatus(w http.ResponseWriter, r *http.Request)
 
 // GetConnectedUsers returns a list of all currently connected users
 func (h *WebSocketHandler) GetConnectedUsers(w http.ResponseWriter, r *http.Request) {
-	// Check if the request is authenticated
-	_, err := GetUserIDFromContext(r.Context())
+	// Check authentication
+	_, err := middleware.GetUserIDFromContext(r.Context())
 	if err != nil {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
-
+	
 	// Get connected users from service
 	userIDs, err := h.wsService.GetConnectedUsers()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-
-	// Return the list of user IDs as JSON
+	
+	// Return just the userIDs array without wrapping it
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string][]int{"users": userIDs})
+	json.NewEncoder(w).Encode(userIDs)
 }

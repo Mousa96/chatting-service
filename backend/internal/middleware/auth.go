@@ -3,6 +3,7 @@ package middleware
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -68,4 +69,13 @@ func AuthMiddleware(jwtKey []byte) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+// Add this function to your middleware package
+func GetUserIDFromContext(ctx context.Context) (int, error) {
+	userID, ok := ctx.Value(UserIDKey).(int)
+	if !ok {
+		return 0, errors.New("user ID not found in context")
+	}
+	return userID, nil
 }
