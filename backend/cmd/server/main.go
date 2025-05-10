@@ -16,6 +16,9 @@ import (
 	msgService "github.com/Mousa96/chatting-service/internal/message/service"
 	"github.com/Mousa96/chatting-service/internal/middleware"
 	"github.com/Mousa96/chatting-service/internal/storage"
+	wsHandler "github.com/Mousa96/chatting-service/internal/websocket/handler"
+	wsRepository "github.com/Mousa96/chatting-service/internal/websocket/repository"
+	wsService "github.com/Mousa96/chatting-service/internal/websocket/service"
 )
 
 func corsMiddleware(next http.Handler) http.Handler {
@@ -32,6 +35,25 @@ func corsMiddleware(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+func setupWebSocketRoutes(mux *http.ServeMux, messageSvc msgService.Service, authMiddleware func(http.Handler) http.Handler, jwtKey []byte) {
+	// Create repository
+	wsRepo := wsRepository.NewMemoryRepository()
+	
+	// Create service
+	wsSvc := wsService.NewWebSocketService(wsRepo, messageSvc)
+	
+	// Create handler
+	wsHandler := wsHandler.NewWebSocketHandler(wsSvc)
+	
+	// Create WebSocket-specific auth middleware that also checks query params
+	wsAuthMiddleware := middleware.WebSocketAuthMiddleware(jwtKey)
+	
+	// Register routes with WebSocket auth middleware
+	mux.Handle("/ws", wsAuthMiddleware(http.HandlerFunc(wsHandler.HandleConnection)))
+	mux.Handle("/ws/status", authMiddleware(http.HandlerFunc(wsHandler.GetUserStatus)))
+	mux.Handle("/ws/users", authMiddleware(http.HandlerFunc(wsHandler.GetConnectedUsers)))
 }
 
 func main() {
@@ -115,6 +137,9 @@ func main() {
 
 	// Apply middleware to protected routes
 	mux.Handle("/api/messages/", corsMiddleware(authMiddleware(http.StripPrefix("/api/messages", messageMux))))
+
+	// Add websocket routes
+	setupWebSocketRoutes(mux, messageSvc, authMiddleware, jwtKey)
 
 	port := ":8080"
 

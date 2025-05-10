@@ -54,6 +54,14 @@ func (m *mockService) UpdateMessageStatus(messageID int, status models.MessageSt
 	return args.Error(0)
 }
 
+func (m *mockService) GetMessageByID(messageID int) (*models.Message, error) {
+	args := m.Called(messageID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.Message), args.Error(1)
+}
+
 func TestSendMessage(t *testing.T) {
 	tests := []struct {
 		name string

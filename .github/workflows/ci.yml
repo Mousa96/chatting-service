@@ -7,8 +7,8 @@ on:
     branches: [main]
 
 jobs:
-  test:
-    name: Test
+  unit-tests:
+    name: Unit Tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -28,8 +28,8 @@ jobs:
         run: |
           go test -race -v $(go list ./... | grep -v integration)
 
-  integration:
-    needs: test
+  integration_tests:
+    needs: unit-tests
     name: Integration Tests
     runs-on: ubuntu-latest
     steps:

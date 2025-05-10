@@ -131,3 +131,12 @@ func (s *MessageService) UpdateMessageStatus(messageID int, status models.Messag
 
 	return nil
 }
+
+// GetMessageByID retrieves a message by its ID
+func (s *MessageService) GetMessageByID(messageID int) (*models.Message, error) {
+	message, err := s.messageRepo.GetMessageByID(messageID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get message by ID: %w", err)
+	}
+	return message, nil
+}

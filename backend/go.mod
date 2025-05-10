@@ -4,8 +4,10 @@ go 1.22
 
 require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.79.3
+	github.com/golang-jwt/jwt/v4 v4.4.2
 	github.com/golang-jwt/jwt/v5 v5.2.2
 	github.com/golang-migrate/migrate/v4 v4.17.0
+	github.com/gorilla/websocket v1.5.3
 	github.com/lib/pq v1.10.9
 	github.com/stretchr/testify v1.10.0
 	golang.org/x/crypto v0.18.0

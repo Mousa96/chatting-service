@@ -16,7 +16,8 @@ const (
 type Message struct {
 	ID         int           `json:"id"`
 	SenderID   int           `json:"sender_id"`
-	ReceiverID int          `json:"receiver_id"`
+	ReceiverID int          `json:"receiver_id,omitempty"`
+	ReceiverIDs []int         `json:"receiver_ids,omitempty"`
 	Content    string       `json:"content"`
 	MediaURL   string       `json:"media_url,omitempty"`
 	Status     MessageStatus `json:"status"`
