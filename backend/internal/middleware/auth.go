@@ -16,6 +16,12 @@ import (
 type contextKey string
 const UserIDKey = contextKey("user_id")
 
+// Claims represents the JWT token claims structure
+type Claims struct {
+	UserID int `json:"user_id"`
+	jwt.RegisteredClaims
+}
+
 // AuthMiddleware creates a new authentication middleware
 func AuthMiddleware(jwtKey []byte) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
@@ -78,4 +84,27 @@ func GetUserIDFromContext(ctx context.Context) (int, error) {
 		return 0, errors.New("user ID not found in context")
 	}
 	return userID, nil
+}
+
+// ValidateTokenAndGetUserID validates a JWT token and returns the user ID
+func ValidateTokenAndGetUserID(tokenString string, jwtKey string) (int, error) {
+	// Parse the JWT token
+	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
+		// Validate signing method
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return []byte(jwtKey), nil
+	})
+
+	if err != nil {
+		return 0, err
+	}
+
+	// Extract claims
+	if claims, ok := token.Claims.(*Claims); ok && token.Valid {
+		return claims.UserID, nil
+	}
+
+	return 0, fmt.Errorf("invalid token")
 }

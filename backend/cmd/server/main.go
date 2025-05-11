@@ -49,7 +49,7 @@ func setupWebSocketRoutes(mux *http.ServeMux, messageSvc msgService.Service, aut
 	wsSvc := wsService.NewWebSocketService(wsRepo, messageSvc)
 	
 	// Create handler
-	wsHandler := wsHandler.NewWebSocketHandler(wsSvc)
+	wsHandler := wsHandler.NewWebSocketHandler(wsSvc, jwtKey)
 	
 	// Register routes with WebSocket auth middleware
 	wsAuthMiddleware := middleware.WebSocketAuthMiddleware(jwtKey)
@@ -71,10 +71,12 @@ func setupWebSocketRoutesWithThrottling(
 ) wsService.Service {
 	wsRepo := wsRepository.NewMemoryRepository()
 	wsSvc := wsService.NewWebSocketServiceWithThrottling(wsRepo, messageSvc, throttleLimit, throttleWindow)
-	wsHandler := wsHandler.NewWebSocketHandler(wsSvc)
+	wsHandler := wsHandler.NewWebSocketHandler(wsSvc, jwtKey)
 
 	// WebSocket endpoint
-	mux.Handle("/ws", authMiddleware(http.HandlerFunc(wsHandler.HandleConnection)))
+	mux.Handle("/ws", middleware.WebSocketAuthMiddleware(jwtKey)(http.HandlerFunc(wsHandler.HandleConnection)))
+	mux.Handle("/ws/status", authMiddleware(http.HandlerFunc(wsHandler.GetUserStatus)))
+	mux.Handle("/ws/users", authMiddleware(http.HandlerFunc(wsHandler.GetConnectedUsers)))
 	
 	// Other WebSocket routes...
 	
