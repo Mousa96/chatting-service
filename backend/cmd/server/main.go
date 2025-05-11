@@ -61,6 +61,26 @@ func setupWebSocketRoutes(mux *http.ServeMux, messageSvc msgService.Service, aut
 	return wsSvc
 }
 
+func setupWebSocketRoutesWithThrottling(
+	mux *http.ServeMux,
+	messageSvc msgService.Service,
+	authMiddleware func(http.Handler) http.Handler,
+	jwtKey []byte,
+	throttleLimit int,
+	throttleWindow time.Duration,
+) wsService.Service {
+	wsRepo := wsRepository.NewMemoryRepository()
+	wsSvc := wsService.NewWebSocketServiceWithThrottling(wsRepo, messageSvc, throttleLimit, throttleWindow)
+	wsHandler := wsHandler.NewWebSocketHandler(wsSvc)
+
+	// WebSocket endpoint
+	mux.Handle("/ws", authMiddleware(http.HandlerFunc(wsHandler.HandleConnection)))
+	
+	// Other WebSocket routes...
+	
+	return wsSvc
+}
+
 func main() {
 	// Add this debugging code at the beginning
 
@@ -143,7 +163,8 @@ func main() {
 	mux.Handle("/api/auth/register", corsMiddleware(http.HandlerFunc(authHdlr.Register)))
 	mux.Handle("/api/auth/login", corsMiddleware(http.HandlerFunc(authHdlr.Login)))
 
-	// Protected routes
+	// Protected routes with rate limiting
+	// Apply different rate limits for different endpoints
 	messageMux := http.NewServeMux()
 	messageMux.HandleFunc("/", messageHdlr.SendMessage)
 	messageMux.HandleFunc("/conversation/", messageHdlr.GetConversation)
@@ -152,11 +173,32 @@ func main() {
 	messageMux.HandleFunc("/history", messageHdlr.GetMessageHistory)
 	messageMux.HandleFunc("/status", messageHdlr.UpdateMessageStatus)
 
-	// Apply middleware to protected routes
-	mux.Handle("/api/messages/", corsMiddleware(authMiddleware(http.StripPrefix("/api/messages", messageMux))))
-
-	// Get websocket service
-	wsSvc := setupWebSocketRoutes(mux, messageSvc, authMiddleware, jwtKey)
+	// Apply middleware to protected routes (auth + rate limiting)
+	// 10 requests per minute for normal message endpoints
+	rateLimitedMessages := middleware.RateLimitMiddleware(
+		authMiddleware(http.StripPrefix("/api/messages", messageMux)),
+		10,
+		time.Minute,
+	)
+	mux.Handle("/api/messages/", corsMiddleware(rateLimitedMessages))
+	
+	// More stringent rate limit for broadcast messages (3 per minute)
+	broadcastLimiter := middleware.RateLimitMiddleware(
+		authMiddleware(http.HandlerFunc(messageHdlr.BroadcastMessage)),
+		3, 
+		time.Minute,
+	)
+	mux.Handle("/api/messages/broadcast", corsMiddleware(broadcastLimiter))
+	
+	// Initialize WebSocket service with throttling
+	wsSvc := setupWebSocketRoutesWithThrottling(
+		mux, 
+		messageSvc, 
+		authMiddleware, 
+		jwtKey,
+		5,    // 5 messages per second max
+		time.Second,
+	)
 
 	// Initialize user components with the websocket service
 	userSvc := userService.NewUserService(userRepo, wsSvc)

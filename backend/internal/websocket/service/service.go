@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"sync"
 	"time"
 
 	messageModels "github.com/Mousa96/chatting-service/internal/message/models"
@@ -32,6 +33,12 @@ const (
 type WebSocketService struct {
 	repo          repository.Repository
 	messageService service.Service
+	
+	// Message throttling
+	throttleLimit   int
+	throttleWindow  time.Duration
+	messageCounters map[int][]time.Time
+	throttleMutex   sync.Mutex
 }
 
 // NewWebSocketService creates a new WebSocketService instance
@@ -39,6 +46,23 @@ func NewWebSocketService(repo repository.Repository, messageService service.Serv
 	return &WebSocketService{
 		repo:          repo,
 		messageService: messageService,
+	}
+}
+
+// NewWebSocketServiceWithThrottling creates a new WebSocketService instance with throttling
+func NewWebSocketServiceWithThrottling(
+	repo repository.Repository,
+	msgService service.Service,
+	limit int,
+	window time.Duration,
+) *WebSocketService {
+	return &WebSocketService{
+		repo:            repo,
+		messageService:  msgService,
+		throttleLimit:   limit,
+		throttleWindow:  window,
+		messageCounters: make(map[int][]time.Time),
+		throttleMutex:   sync.Mutex{},
 	}
 }
 
@@ -267,23 +291,11 @@ func (s *WebSocketService) readPump(client *models.Client) {
 			break
 		}
 
-		// Process the received message
-		var event models.Event
-		if err := json.Unmarshal(message, &event); err != nil {
-			log.Printf("error unmarshaling event: %v", err)
+		// Use the new throttling-aware message handler
+		throttled := s.handleRawMessage(client.UserID, message)
+		if throttled {
+			// If the message was throttled, we've already sent an error response
 			continue
-		}
-
-		// Handle different event types
-		switch event.Type {
-		case models.EventMessage:
-			s.handleMessageEvent(client.UserID, &event)
-		case models.EventTyping:
-			s.handleTypingEvent(client.UserID, &event)
-		case models.EventStatusChange:
-			s.handleStatusChangeEvent(client.UserID, &event)
-		case models.EventBroadcast:
-			s.handleBroadcastEvent(client.UserID, &event)
 		}
 	}
 }
@@ -463,4 +475,88 @@ func (s *WebSocketService) handleBroadcastEvent(senderID int, event *models.Even
 		// Only send to connected users
 		s.SendEvent(msg.ReceiverID, broadcastEvent)
 	}
+}
+
+// isThrottled checks if a message should be throttled
+func (s *WebSocketService) isThrottled(userID int) bool {
+	s.throttleMutex.Lock()
+	defer s.throttleMutex.Unlock()
+	
+	// If no limit is set, don't throttle
+	if s.throttleLimit <= 0 {
+		return false
+	}
+	
+	now := time.Now()
+	
+	// Get the user's message timestamps
+	timestamps, exists := s.messageCounters[userID]
+	if !exists {
+		// First message from this user
+		s.messageCounters[userID] = []time.Time{now}
+		return false
+	}
+	
+	// Filter out timestamps outside the window
+	validTimestamps := []time.Time{}
+	for _, ts := range timestamps {
+		if now.Sub(ts) <= s.throttleWindow {
+			validTimestamps = append(validTimestamps, ts)
+		}
+	}
+	
+	// Check if the user is over the limit
+	if len(validTimestamps) >= s.throttleLimit {
+		return true
+	}
+	
+	// Add the current timestamp and update
+	s.messageCounters[userID] = append(validTimestamps, now)
+	return false // Message was not throttled
+}
+
+// handleRawMessage processes a raw websocket message with throttling
+func (s *WebSocketService) handleRawMessage(userID int, message []byte) bool {
+	// Check if the user is being throttled
+	if s.isThrottled(userID) {
+		// User is sending too many messages
+		log.Printf("User %d is being throttled - too many messages", userID)
+		
+		// Send a throttling message to the user
+		errorEvent := &models.Event{
+			Type:    models.EventError,
+			Message: &messageModels.Message{Content: "You are sending messages too quickly. Please slow down."},
+		}
+		
+		errorJSON, _ := json.Marshal(errorEvent)
+		client, err := s.repo.GetClient(userID)
+		if err == nil && client != nil {
+			client.Send <- errorJSON
+		}
+		
+		return true // Message was throttled
+	}
+	
+	// Parse the message
+	var event models.Event
+	if err := json.Unmarshal(message, &event); err != nil {
+		log.Printf("Error parsing WebSocket message: %v", err)
+		return false
+	}
+	
+	// Handle the event based on its type
+	switch event.Type {
+	case models.EventMessage:
+		s.handleMessageEvent(userID, &event)
+	case models.EventTyping:
+		s.handleTypingEvent(userID, &event)
+	case models.EventStatusChange:
+		s.handleStatusChangeEvent(userID, &event)
+	case models.EventBroadcast:
+		s.handleBroadcastEvent(userID, &event)
+	default:
+		log.Printf("Unknown event type: %s", event.Type)
+	}
+	
+	return false // Message was not throttled
 }
