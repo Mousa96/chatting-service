@@ -56,10 +56,18 @@ func (h *MessageHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *MessageHandler) GetConversation(w http.ResponseWriter, r *http.Request) {
-	// Extract user IDs
+	// Extract current user ID from context
+	currentUserID, err := middleware.GetUserIDFromContext(r.Context())
+	if err != nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	
+	// Extract other user ID from path
+	// URL format: /conversation/{id}
 	path := r.URL.Path
 	parts := strings.Split(path, "/")
-	if len(parts) < 2 {
+	if len(parts) < 1 {
 		http.Error(w, "Invalid path", http.StatusBadRequest)
 		return
 	}
@@ -71,21 +79,18 @@ func (h *MessageHandler) GetConversation(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	
-	// Get current user ID from context
-	currentUserID, _ := middleware.GetUserIDFromContext(r.Context())
-	
-	// Get conversation
 	messages, err := h.messageService.GetConversation(currentUserID, otherUserID)
-	if err != nil {
-		// If no conversation exists, return an empty array instead of an error
-		if strings.Contains(err.Error(), "no conversation") {
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"messages": []interface{}{},
-			})
-			return
-		}
-		
+	
+	// Return 200 with empty array instead of error if no messages found
+	if err != nil && (strings.Contains(err.Error(), "no conversation") || 
+					  strings.Contains(err.Error(), "not found")) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"messages": []interface{}{},
+		})
+		return
+	} else if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
