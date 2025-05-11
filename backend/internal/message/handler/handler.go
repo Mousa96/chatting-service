@@ -63,16 +63,13 @@ func (h *MessageHandler) GetConversation(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	
-	// Extract other user ID from path
-	// URL format: /conversation/{id}
-	path := r.URL.Path
-	parts := strings.Split(path, "/")
-	if len(parts) < 1 {
-		http.Error(w, "Invalid path", http.StatusBadRequest)
+	// Extract other user ID from query parameter instead of path
+	otherUserIDStr := r.URL.Query().Get("user_id")
+	if otherUserIDStr == "" {
+		http.Error(w, "Missing user_id parameter", http.StatusBadRequest)
 		return
 	}
 	
-	otherUserIDStr := parts[len(parts)-1]
 	otherUserID, err := strconv.Atoi(otherUserIDStr)
 	if err != nil {
 		http.Error(w, "Invalid user ID", http.StatusBadRequest)

@@ -140,7 +140,7 @@ func TestGetConversation(t *testing.T) {
 		
 		mockService.On("GetConversation", 1, 2).Return(mockMessages, nil).Once()
 		
-		req := httptest.NewRequest(http.MethodGet, "/conversation/2", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/messages/conversation?user_id=2", nil)
 		ctx := context.WithValue(req.Context(), middleware.UserIDKey, 1)
 		req = req.WithContext(ctx)
 		
@@ -162,7 +162,7 @@ func TestGetConversation(t *testing.T) {
 		// Return empty slice instead of nil to avoid type casting issues
 		mockService.On("GetConversation", 1, 3).Return([]models.Message{}, errors.New("no conversation found")).Once()
 		
-		req := httptest.NewRequest(http.MethodGet, "/conversation/3", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/messages/conversation?user_id=3", nil)
 		ctx := context.WithValue(req.Context(), middleware.UserIDKey, 1)
 		req = req.WithContext(ctx)
 		
@@ -183,7 +183,7 @@ func TestGetConversation(t *testing.T) {
 	
 	// Test case: Invalid user ID
 	t.Run("InvalidUserID", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/conversation/invalid", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/messages/conversation?user_id=invalid", nil)
 		ctx := context.WithValue(req.Context(), middleware.UserIDKey, 1)
 		req = req.WithContext(ctx)
 		
@@ -197,7 +197,7 @@ func TestGetConversation(t *testing.T) {
 	
 	// Test case: User not authenticated
 	t.Run("UserNotAuthenticated", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/conversation/2", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/messages/conversation?user_id=2", nil)
 		// No user ID in context
 		
 		rr := httptest.NewRecorder()
