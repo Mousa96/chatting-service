@@ -32,15 +32,26 @@ func TestMessageFlow(t *testing.T) {
 	resp := sendTestMessage(msgReq, user1Token)
 	t.Logf("Send Message Response: %s", resp.Body.String())
 
-	// Get conversation as user2 with user1 (ID 2)
-	messages, err := getTestConversation(2, user2Token)
-	if err != nil {
+	// Get conversation from user2's perspective
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/messages/conversation?user_id=%d", 2), nil)
+	req.Header.Set("Authorization", "Bearer "+user2Token)
+	rr := httptest.NewRecorder()
+	testServer.ServeHTTP(rr, req)
+
+	// Parse response with correct structure
+	var convResponse struct {
+		Messages []msgModels.Message `json:"messages"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &convResponse); err != nil {
 		t.Fatalf("Failed to get conversation: %v", err)
 	}
-	
-	assert.Len(t, messages, 1)
-	if len(messages) > 0 {
-		assert.Equal(t, "Hello from user1!", messages[0].Content)
+
+	// Now access messages through the response structure
+	t.Logf("Got %d messages in conversation", len(convResponse.Messages))
+
+	assert.Len(t, convResponse.Messages, 1)
+	if len(convResponse.Messages) > 0 {
+		assert.Equal(t, "Hello from user1!", convResponse.Messages[0].Content)
 	}
 }
 

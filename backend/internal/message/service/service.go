@@ -140,3 +140,13 @@ func (s *MessageService) GetMessageByID(messageID int) (*models.Message, error) 
 	}
 	return message, nil
 }
+
+// GetMessageHistoryPaginated retrieves message history with pagination
+func (s *MessageService) GetMessageHistoryPaginated(userID, page, pageSize int) ([]models.Message, *models.Pagination, error) {
+	return s.messageRepo.GetMessageHistoryPaginated(userID, page, pageSize)
+}
+
+// GetConversationPaginated retrieves conversation with pagination
+func (s *MessageService) GetConversationPaginated(userID1, userID2, page, pageSize int) ([]models.Message, *models.Pagination, error) {
+	return s.messageRepo.GetConversationPaginated(userID1, userID2, page, pageSize)
+}

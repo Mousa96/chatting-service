@@ -65,6 +65,16 @@ func (m *mockService) GetMessageByID(messageID int) (*models.Message, error) {
 	return args.Get(0).(*models.Message), args.Error(1)
 }
 
+func (m *mockService) GetConversationPaginated(userID1, userID2, page, pageSize int) ([]models.Message, *models.Pagination, error) {
+	args := m.Called(userID1, userID2, page, pageSize)
+	return args.Get(0).([]models.Message), args.Get(1).(*models.Pagination), args.Error(2)
+}
+
+func (m *mockService) GetMessageHistoryPaginated(userID, page, pageSize int) ([]models.Message, *models.Pagination, error) {
+	args := m.Called(userID, page, pageSize)
+	return args.Get(0).([]models.Message), args.Get(1).(*models.Pagination), args.Error(2)
+}
+
 func TestSendMessage(t *testing.T) {
 	tests := []struct {
 		name string
@@ -356,56 +366,86 @@ func TestBroadcastMessage(t *testing.T) {
 }
 
 func TestGetMessageHistory(t *testing.T) {
-	tests := []struct {
-		name         string
-		userID       int
-		setupMock    func(*mockService)
-		expectedCode int
-	}{
-		{
-			name:   "Valid request",
-			userID: 1,
-			setupMock: func(ms *mockService) {
-				ms.On("GetMessageHistory", 1).Return([]models.Message{
-					{ID: 1, SenderID: 1, ReceiverID: 2, Content: "Hello"},
-					{ID: 2, SenderID: 2, ReceiverID: 1, Content: "Hi"},
-				}, nil)
-			},
-			expectedCode: http.StatusOK,
-		},
-		{
-			name:   "Empty history",
-			userID: 2,
-			setupMock: func(ms *mockService) {
-				ms.On("GetMessageHistory", 2).Return([]models.Message{}, nil)
-			},
-			expectedCode: http.StatusOK,
-		},
-	}
+	mockService := new(mockService)
+	handler := NewMessageHandler(mockService)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			mockService := new(mockService)
-			if tt.setupMock != nil {
-				tt.setupMock(mockService)
-			}
-			handler := NewMessageHandler(mockService)
+	// Test case: Valid request
+	t.Run("Valid_request", func(t *testing.T) {
+		// Set up mock messages
+		mockMessages := []models.Message{
+			{ID: 1, SenderID: 1, ReceiverID: 2, Content: "Hello", CreatedAt: time.Now()},
+		}
+		mockPagination := &models.Pagination{
+			CurrentPage: 1,
+			PageSize:    10,
+			TotalItems:  1,
+			TotalPages:  1,
+		}
+		
+		// Set up mock service expectation
+		mockService.On("GetMessageHistoryPaginated", 1, 1, 10).Return(mockMessages, mockPagination, nil).Once()
+		
+		// Create request with context containing userID
+		req := httptest.NewRequest(http.MethodGet, "/api/messages/history", nil)
+		ctx := context.WithValue(req.Context(), middleware.UserIDKey, 1) // This is the critical line
+		req = req.WithContext(ctx)
+		
+		// Execute request
+		rr := httptest.NewRecorder()
+		handler.GetMessageHistory(rr, req)
+		
+		// Assert status code
+		assert.Equal(t, http.StatusOK, rr.Code)
+		
+		// Verify JSON response
+		var response map[string]interface{}
+		err := json.Unmarshal(rr.Body.Bytes(), &response)
+		assert.NoError(t, err)
+		
+		// Verify response structure
+		assert.Contains(t, response, "messages")
+		assert.Contains(t, response, "pagination")
+		
+		// Verify service was called correctly
+		mockService.AssertExpectations(t)
+	})
 
-			req := httptest.NewRequest(http.MethodGet, "/api/messages/history", nil)
-			req = req.WithContext(context.WithValue(req.Context(), middleware.UserIDKey, tt.userID))
-			
-			rr := httptest.NewRecorder()
-			handler.GetMessageHistory(rr, req)
-
-			assert.Equal(t, tt.expectedCode, rr.Code)
-			if tt.expectedCode == http.StatusOK {
-				var response struct {
-					Messages []models.Message `json:"messages"`
-				}
-				err := json.NewDecoder(rr.Body).Decode(&response)
-				assert.NoError(t, err)
-			}
-			mockService.AssertExpectations(t)
-		})
-	}
+	// Test case: Empty history
+	t.Run("Empty_history", func(t *testing.T) {
+		// Empty messages, but with valid pagination
+		mockPagination := &models.Pagination{
+			CurrentPage: 1,
+			PageSize:    10,
+			TotalItems:  0,
+			TotalPages:  0,
+		}
+		
+		// Set up mock service expectation
+		mockService.On("GetMessageHistoryPaginated", 1, 1, 10).Return([]models.Message{}, mockPagination, nil).Once()
+		
+		// Create request with context containing userID
+		req := httptest.NewRequest(http.MethodGet, "/api/messages/history", nil)
+		ctx := context.WithValue(req.Context(), middleware.UserIDKey, 1) // This is the critical line
+		req = req.WithContext(ctx)
+		
+		// Execute request
+		rr := httptest.NewRecorder()
+		handler.GetMessageHistory(rr, req)
+		
+		// Assert status code
+		assert.Equal(t, http.StatusOK, rr.Code)
+		
+		// Verify JSON response
+		var response map[string]interface{}
+		err := json.Unmarshal(rr.Body.Bytes(), &response)
+		assert.NoError(t, err)
+		
+		// Verify response structure
+		assert.Contains(t, response, "messages")
+		assert.Contains(t, response, "pagination")
+		assert.Empty(t, response["messages"])
+		
+		// Verify service was called correctly
+		mockService.AssertExpectations(t)
+	})
 }

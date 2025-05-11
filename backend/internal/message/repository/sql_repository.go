@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/Mousa96/chatting-service/internal/message/models"
 )
@@ -151,4 +152,199 @@ func (r *SQLMessageRepository) UpdateMessageStatus(messageID int, status models.
     }
 
     return nil
+}
+
+// GetMessageHistoryPaginated retrieves messages with pagination
+func (r *SQLMessageRepository) GetMessageHistoryPaginated(userID, page, pageSize int) ([]models.Message, *models.Pagination, error) {
+	// Validate and normalize pagination parameters
+	if page < 1 {
+		page = 1
+	}
+	
+	if pageSize < 1 {
+		pageSize = 10 // Default page size
+	} else if pageSize > 100 {
+		pageSize = 100 // Maximum page size
+	}
+	
+	// Calculate offset
+	offset := (page - 1) * pageSize
+	
+	// First, get the total count for pagination
+	var totalItems int
+	countQuery := `SELECT COUNT(*) FROM messages WHERE sender_id = $1 OR receiver_id = $1`
+	err := r.db.QueryRow(countQuery, userID).Scan(&totalItems)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to count messages: %w", err)
+	}
+	
+	// Create the pagination object
+	pagination := models.NewPagination(page, pageSize, totalItems)
+	
+	// If the page is beyond available data, return empty results
+	if page > pagination.TotalPages && pagination.TotalPages > 0 {
+		return []models.Message{}, pagination, nil
+	}
+	
+	// Query with pagination
+	query := `SELECT id, sender_id, receiver_id, content, media_url, status, created_at 
+		FROM messages 
+		WHERE sender_id = $1 OR receiver_id = $1
+		ORDER BY created_at DESC
+		LIMIT $2 OFFSET $3`
+	
+	rows, err := r.db.Query(query, userID, pageSize, offset)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to fetch messages: %w", err)
+	}
+	defer rows.Close()
+	
+	var messages []models.Message
+	for rows.Next() {
+		var msg models.Message
+		var createdAt time.Time
+		
+		err := rows.Scan(
+			&msg.ID,
+			&msg.SenderID,
+			&msg.ReceiverID,
+			&msg.Content,
+			&msg.MediaURL,
+			&msg.Status,
+			&createdAt,
+		)
+		
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to scan message row: %w", err)
+		}
+		
+		msg.CreatedAt = createdAt
+		messages = append(messages, msg)
+	}
+	
+	if err = rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("error iterating message rows: %w", err)
+	}
+	
+	return messages, pagination, nil
+}
+
+// GetConversationPaginated retrieves the conversation between two users with pagination
+func (r *SQLMessageRepository) GetConversationPaginated(userID1, userID2, page, pageSize int) ([]models.Message, *models.Pagination, error) {
+	// Validate and normalize pagination parameters
+	if page < 1 {
+		page = 1
+	}
+	
+	if pageSize < 1 {
+		pageSize = 10 // Default page size
+	} else if pageSize > 100 {
+		pageSize = 100 // Maximum page size
+	}
+	
+	// Calculate offset
+	offset := (page - 1) * pageSize
+	
+	// First, get the total count for pagination
+	var totalItems int
+	countQuery := `SELECT COUNT(*) FROM messages 
+		WHERE (sender_id = $1 AND receiver_id = $2) OR (sender_id = $2 AND receiver_id = $1)`
+	err := r.db.QueryRow(countQuery, userID1, userID2).Scan(&totalItems)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to count messages: %w", err)
+	}
+	
+	// Create the pagination object
+	pagination := models.NewPagination(page, pageSize, totalItems)
+	
+	// If the page is beyond available data, return empty results
+	if page > pagination.TotalPages && pagination.TotalPages > 0 {
+		return []models.Message{}, pagination, nil
+	}
+	
+	// Query with pagination
+	query := `SELECT id, sender_id, receiver_id, content, media_url, status, created_at 
+		FROM messages 
+		WHERE (sender_id = $1 AND receiver_id = $2) OR (sender_id = $2 AND receiver_id = $1)
+		ORDER BY created_at DESC
+		LIMIT $3 OFFSET $4`
+	
+	rows, err := r.db.Query(query, userID1, userID2, pageSize, offset)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to fetch conversation: %w", err)
+	}
+	defer rows.Close()
+	
+	var messages []models.Message
+	for rows.Next() {
+		var msg models.Message
+		var createdAt time.Time
+		
+		err := rows.Scan(
+			&msg.ID,
+			&msg.SenderID,
+			&msg.ReceiverID,
+			&msg.Content,
+			&msg.MediaURL,
+			&msg.Status,
+			&createdAt,
+		)
+		
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to scan message row: %w", err)
+		}
+		
+		msg.CreatedAt = createdAt
+		messages = append(messages, msg)
+	}
+	
+	if err = rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("error iterating message rows: %w", err)
+	}
+	
+	return messages, pagination, nil
+}
+
+// GetMessagesByUser retrieves all messages involving a user
+func (r *SQLMessageRepository) GetMessagesByUser(userID int) ([]models.Message, error) {
+	query := `
+		SELECT id, sender_id, receiver_id, content, media_url, status, created_at
+		FROM messages
+		WHERE sender_id = $1 OR receiver_id = $1
+		ORDER BY created_at DESC`
+
+	rows, err := r.db.Query(query, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get messages for user: %w", err)
+	}
+	defer rows.Close()
+
+	var messages []models.Message
+	for rows.Next() {
+		var msg models.Message
+		var createdAt time.Time
+		
+		err := rows.Scan(
+			&msg.ID,
+			&msg.SenderID,
+			&msg.ReceiverID,
+			&msg.Content,
+			&msg.MediaURL,
+			&msg.Status,
+			&createdAt,
+		)
+		
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan message row: %w", err)
+		}
+		
+		msg.CreatedAt = createdAt
+		messages = append(messages, msg)
+	}
+	
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating message rows: %w", err)
+	}
+	
+	return messages, nil
 }

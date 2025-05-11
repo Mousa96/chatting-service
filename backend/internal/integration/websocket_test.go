@@ -70,6 +70,24 @@ func (m *MockMessageService) GetMessageHistory(userID int) ([]messageModels.Mess
 	return []messageModels.Message{}, nil
 }
 
+func (m *MockMessageService) GetConversationPaginated(userID1, userID2, page, pageSize int) ([]messageModels.Message, *messageModels.Pagination, error) {
+	return []messageModels.Message{}, &messageModels.Pagination{
+		CurrentPage: page,
+		PageSize:    pageSize,
+		TotalItems:  0,
+		TotalPages:  0,
+	}, nil
+}
+
+func (m *MockMessageService) GetMessageHistoryPaginated(userID, page, pageSize int) ([]messageModels.Message, *messageModels.Pagination, error) {
+	return []messageModels.Message{}, &messageModels.Pagination{
+		CurrentPage: page,
+		PageSize:    pageSize,
+		TotalItems:  0,
+		TotalPages:  0,
+	}, nil
+}
+
 // Helper to create a test server with WebSocket support
 func setupWebSocketTestServer(t *testing.T) *httptest.Server {
 	// Create repository

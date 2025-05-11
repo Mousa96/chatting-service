@@ -59,6 +59,16 @@ func (m *MockMessageService) UploadMedia(userID int, file *multipart.FileHeader)
 	return args.String(0), args.Error(1)
 }
 
+func (m *MockMessageService) GetConversationPaginated(userID1, userID2, page, pageSize int) ([]messageModels.Message, *messageModels.Pagination, error) {
+	args := m.Called(userID1, userID2, page, pageSize)
+	return args.Get(0).([]messageModels.Message), args.Get(1).(*messageModels.Pagination), args.Error(2)
+}
+
+func (m *MockMessageService) GetMessageHistoryPaginated(userID, page, pageSize int) ([]messageModels.Message, *messageModels.Pagination, error) {
+	args := m.Called(userID, page, pageSize)
+	return args.Get(0).([]messageModels.Message), args.Get(1).(*messageModels.Pagination), args.Error(2)
+}
+
 func TestWebSocketService_SendEvent(t *testing.T) {
 	// Create mock repository
 	mockRepo := repository.NewMockRepository()

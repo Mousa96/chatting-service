@@ -82,3 +82,84 @@ func (r *TestMessageRepository) UpdateMessageStatus(messageID int, status models
 	}
 	return fmt.Errorf("message not found")
 }
+
+// GetConversationPaginated retrieves the conversation with pagination
+func (r *TestMessageRepository) GetConversationPaginated(userID1, userID2, page, pageSize int) ([]models.Message, *models.Pagination, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	// First get all messages in conversation
+	var conversation []models.Message
+	for _, msg := range r.messages {
+		if (msg.SenderID == userID1 && msg.ReceiverID == userID2) ||
+			(msg.SenderID == userID2 && msg.ReceiverID == userID1) {
+			conversation = append(conversation, *msg)
+		}
+	}
+
+	totalItems := len(conversation)
+	pagination := models.NewPagination(page, pageSize, totalItems)
+	
+	// Apply pagination
+	start := (page - 1) * pageSize
+	end := start + pageSize
+	if start >= totalItems {
+		return []models.Message{}, pagination, nil
+	}
+	if end > totalItems {
+		end = totalItems
+	}
+	
+	// Return paginated slice
+	if start < end {
+		return conversation[start:end], pagination, nil
+	}
+	return []models.Message{}, pagination, nil
+}
+
+// GetMessageHistoryPaginated retrieves messages with pagination
+func (r *TestMessageRepository) GetMessageHistoryPaginated(userID, page, pageSize int) ([]models.Message, *models.Pagination, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	// First get all messages
+	var messages []models.Message
+	for _, msg := range r.messages {
+		if msg.SenderID == userID || msg.ReceiverID == userID {
+			messages = append(messages, *msg)
+		}
+	}
+
+	totalItems := len(messages)
+	pagination := models.NewPagination(page, pageSize, totalItems)
+	
+	// Apply pagination
+	start := (page - 1) * pageSize
+	end := start + pageSize
+	if start >= totalItems {
+		return []models.Message{}, pagination, nil
+	}
+	if end > totalItems {
+		end = totalItems
+	}
+	
+	// Return paginated slice
+	if start < end {
+		return messages[start:end], pagination, nil
+	}
+	return []models.Message{}, pagination, nil
+}
+
+// GetMessagesByUser retrieves all messages involving a user
+func (r *TestMessageRepository) GetMessagesByUser(userID int) ([]models.Message, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	var messages []models.Message
+	for _, msg := range r.messages {
+		if msg.SenderID == userID || msg.ReceiverID == userID {
+			messages = append(messages, *msg)
+		}
+	}
+	return messages, nil
+}

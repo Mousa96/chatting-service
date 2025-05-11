@@ -63,7 +63,7 @@ func (h *MessageHandler) GetConversation(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	
-	// Extract other user ID from query parameter instead of path
+	// Extract other user ID from query parameter
 	otherUserIDStr := r.URL.Query().Get("user_id")
 	if otherUserIDStr == "" {
 		http.Error(w, "Missing user_id parameter", http.StatusBadRequest)
@@ -83,8 +83,9 @@ func (h *MessageHandler) GetConversation(w http.ResponseWriter, r *http.Request)
 					  strings.Contains(err.Error(), "not found")) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
+		// Return object with messages field - not direct array
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"messages": []interface{}{},
+			"messages": []models.Message{},
 		})
 		return
 	} else if err != nil {
@@ -92,7 +93,7 @@ func (h *MessageHandler) GetConversation(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	
-	// Return messages
+	// Return messages in object with messages field - not direct array
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"messages": messages,
@@ -203,24 +204,57 @@ func (h *MessageHandler) BroadcastMessage(w http.ResponseWriter, r *http.Request
 }
 
 func (h *MessageHandler) GetMessageHistory(w http.ResponseWriter, r *http.Request) {
-	// Get user ID from context
 	userID, ok := r.Context().Value(middleware.UserIDKey).(int)
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
-
-	// Get message history
-	messages, err := h.messageService.GetMessageHistory(userID)
+	
+	// Initialize default values
+	page := 1
+	pageSize := 10
+	
+	// Get page parameter if provided
+	pageStr := r.URL.Query().Get("page")
+	if pageStr != "" {
+		var err error
+		page, err = strconv.Atoi(pageStr)
+		if err != nil || page < 1 {
+			// Return JSON error response instead of plain text
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{
+				"error": "invalid page parameter",
+			})
+			return
+		}
+	}
+	
+	// Get page_size parameter if provided
+	pageSizeStr := r.URL.Query().Get("page_size")
+	if pageSizeStr != "" {
+		var err error
+		pageSize, err = strconv.Atoi(pageSizeStr)
+		if err != nil || pageSize < 1 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{
+				"error": "invalid page_size parameter",
+			})
+			return
+		}
+	}
+	
+	messages, pagination, err := h.messageService.GetMessageHistoryPaginated(userID, page, pageSize)
 	if err != nil {
-		http.Error(w, "failed to get message history", http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf("Failed to get message history: %v", err), http.StatusInternalServerError)
 		return
 	}
-
-	// Return response
+	
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"messages": messages,
+		"pagination": pagination,
 	})
 }
 
@@ -283,4 +317,72 @@ func (h *MessageHandler) UpdateMessageStatus(w http.ResponseWriter, r *http.Requ
 	json.NewEncoder(w).Encode(map[string]string{
 		"status": "success",
 	})
+}
+
+func (h *MessageHandler) GetConversationPaginated(w http.ResponseWriter, r *http.Request) {
+	// Extract user ID from context using the proper key
+	userID, ok := r.Context().Value(middleware.UserIDKey).(int)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// Get other user ID from query parameters
+	otherUserIDStr := r.URL.Query().Get("user_id")
+	if otherUserIDStr == "" {
+		http.Error(w, "Missing user_id parameter", http.StatusBadRequest)
+		return
+	}
+
+	otherUserID, err := strconv.Atoi(otherUserIDStr)
+	if err != nil {
+		http.Error(w, "Invalid user_id parameter", http.StatusBadRequest)
+		return
+	}
+
+	// Check if pagination is requested
+	var page, pageSize int = 1, 10 // Default values
+	
+	// Parse pagination parameters if provided
+	pageParam := r.URL.Query().Get("page")
+	if pageParam != "" {
+		page, err = strconv.Atoi(pageParam)
+		if err != nil || page < 1 {
+			page = 1
+		}
+	}
+	
+	pageSizeParam := r.URL.Query().Get("page_size")
+	if pageSizeParam != "" {
+		pageSize, err = strconv.Atoi(pageSizeParam)
+		if err != nil || pageSize < 1 {
+			pageSize = 10
+		} else if pageSize > 100 {
+			pageSize = 100 // Limit maximum page size
+		}
+	}
+
+	// Get conversation with pagination
+	messages, pagination, err := h.messageService.GetConversationPaginated(userID, otherUserID, page, pageSize)
+	if err != nil {
+		log.Printf("Error getting conversation: %v", err)
+		http.Error(w, "Failed to retrieve conversation", http.StatusInternalServerError)
+		return
+	}
+
+	// Prepare response
+	response := struct {
+		Messages   []models.Message          `json:"messages"`
+		Pagination *models.Pagination  `json:"pagination"`
+	}{
+		Messages:   messages,
+		Pagination: pagination,
+	}
+
+	// Return JSON response
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Printf("Error encoding response: %v", err)
+		http.Error(w, "Error encoding response", http.StatusInternalServerError)
+	}
 }
