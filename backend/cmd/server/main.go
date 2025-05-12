@@ -16,6 +16,7 @@ import (
 	msgRepo "github.com/Mousa96/chatting-service/internal/message/repository"
 	msgService "github.com/Mousa96/chatting-service/internal/message/service"
 	"github.com/Mousa96/chatting-service/internal/middleware"
+	"github.com/Mousa96/chatting-service/internal/router"
 	"github.com/Mousa96/chatting-service/internal/storage"
 	userHandler "github.com/Mousa96/chatting-service/internal/user/handler"
 	userRepository "github.com/Mousa96/chatting-service/internal/user/repository"
@@ -84,31 +85,6 @@ func setupWebSocketRoutesWithThrottling(
 }
 
 func main() {
-	// Add this debugging code at the beginning
-
-	// Create a basic file check
-	staticFilePath := "/app/static/index.html"
-	if _, err := os.Stat(staticFilePath); os.IsNotExist(err) {
-		log.Printf("WARNING: Static file %s does not exist", staticFilePath)
-	} else {
-		log.Printf("Static file %s exists and is accessible", staticFilePath)
-	}
-
-	// Keep only ONE static file handler in your code
-	// If you're using a custom mux (recommended):
-	mux := http.NewServeMux()
-	fs := http.FileServer(http.Dir("/app/static"))
-	mux.Handle("/static/", http.StripPrefix("/static/", fs))
-
-	// Or if using default mux (less recommended):
-	// fs := http.FileServer(http.Dir("/app/static"))
-	// http.Handle("/static/", http.StripPrefix("/static/", fs))
-
-	// Test simple route to verify basic HTTP functionality
-	http.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("pong"))
-	})
-
 	// Database configuration
 	dbConfig := &db.Config{
 		Host:     "db",
@@ -137,99 +113,60 @@ func main() {
 
 	log.Println("Successfully connected to database")
 
-	// Initialize separate repositories for auth and user
+	// Initialize repositories
 	authRepo := authRepository.NewUserRepository(database)
 	userRepo := userRepository.NewPostgresRepository(database)
-
+	
 	// Initialize storage
 	fileStorage := storage.NewLocalStorage("uploads", "/uploads")
 	
-	// Initialize services
+	// Initialize JWT key
 	jwtKey := []byte("your-secret-key") // In production, use environment variable
+	
+	// Initialize services
 	authSvc := authService.NewAuthService(authRepo, jwtKey)
 	messageSvc := msgService.NewMessageService(msgRepo.NewMessageRepository(database), fileStorage)
-
+	
 	// Initialize handlers
 	authHdlr := authHandler.NewAuthHandler(authSvc)
 	messageHdlr := msgHandler.NewMessageHandler(messageSvc)
-
-	// Initialize middleware
-	authMiddleware := middleware.AuthMiddleware(jwtKey)
-
-	// Public routes
-	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
-		if _, err := w.Write([]byte("OK")); err != nil {
-			log.Printf("Error writing response: %v", err)
-		}
-	})
-	mux.Handle("/api/auth/register", corsMiddleware(http.HandlerFunc(authHdlr.Register)))
-	mux.Handle("/api/auth/login", corsMiddleware(http.HandlerFunc(authHdlr.Login)))
-
-	// Protected routes with rate limiting
-	// Apply different rate limits for different endpoints
-	messageMux := http.NewServeMux()
-	messageMux.HandleFunc("/", messageHdlr.SendMessage)
-	messageMux.HandleFunc("/conversation/", messageHdlr.GetConversation)
-	messageMux.HandleFunc("/upload", messageHdlr.UploadMedia)
-	messageMux.HandleFunc("/broadcast", messageHdlr.BroadcastMessage)
-	messageMux.HandleFunc("/history", messageHdlr.GetMessageHistory)
-	messageMux.HandleFunc("/status", messageHdlr.UpdateMessageStatus)
-
-	// Apply middleware to protected routes (auth + rate limiting)
-	// 10 requests per minute for normal message endpoints
-	rateLimitedMessages := middleware.RateLimitMiddleware(
-		authMiddleware(http.StripPrefix("/api/messages", messageMux)),
-		10,
-		time.Minute,
-	)
-	mux.Handle("/api/messages/", corsMiddleware(rateLimitedMessages))
 	
-	// More stringent rate limit for broadcast messages (3 per minute)
-	broadcastLimiter := middleware.RateLimitMiddleware(
-		authMiddleware(http.HandlerFunc(messageHdlr.BroadcastMessage)),
-		3, 
-		time.Minute,
-	)
-	mux.Handle("/api/messages/broadcast", corsMiddleware(broadcastLimiter))
-	
-	// Initialize WebSocket service with throttling
-	wsSvc := setupWebSocketRoutesWithThrottling(
-		mux, 
+	// Set up WebSocket components
+	wsRepo := wsRepository.NewMemoryRepository()
+	wsSvc := wsService.NewWebSocketServiceWithThrottling(
+		wsRepo, 
 		messageSvc, 
-		authMiddleware, 
-		jwtKey,
 		5,    // 5 messages per second max
 		time.Second,
 	)
-
-	// Initialize user components with the websocket service
+	wsHdlr := wsHandler.NewWebSocketHandler(wsSvc, jwtKey)
+	
+	// Initialize user components
 	userSvc := userService.NewUserService(userRepo, wsSvc)
-	userHandler := userHandler.NewUserHandler(userSvc)
-
-	// Set up user routes
-	userMux := http.NewServeMux()
-	userMux.HandleFunc("/", userHandler.GetAllUsers)
-	userMux.HandleFunc("/profile", userHandler.GetUserByID)
-	userMux.HandleFunc("/status", userHandler.UpdateUserStatus)
-
-	// Apply middleware to user routes
-	mux.Handle("/api/users", corsMiddleware(authMiddleware(userMux)))
-	mux.Handle("/api/users/", corsMiddleware(authMiddleware(http.StripPrefix("/api/users", userMux))))
-
-	// Print out the current working directory when the server starts
-	fmt.Println("Current working directory:", currentWorkingDir())
-
+	userHdlr := userHandler.NewUserHandler(userSvc)
+	
+	// Configure router
+	routerConfig := router.Config{
+		AuthHandler:      authHdlr,
+		MessageHandler:   messageHdlr,
+		UserHandler:      userHdlr,
+		WebSocketHandler: wsHdlr,
+		JWTKey:           jwtKey,
+	}
+	
+	// Create server with timeouts
 	port := ":8080"
-
-	// Create a server with timeouts
 	srv := &http.Server{
 		Addr:         port,
-		Handler:      corsMiddleware(mux),
+		Handler:      router.New(routerConfig),
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}
-
+	
+	// Print out the current working directory when the server starts
+	fmt.Println("Current working directory:", currentWorkingDir())
+	
 	log.Printf("Server starting on %s", port)
 	if err := srv.ListenAndServe(); err != nil {
 		log.Fatal("Server failed to start:", err)
