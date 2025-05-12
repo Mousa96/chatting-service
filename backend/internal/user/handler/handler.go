@@ -19,7 +19,17 @@ func NewUserHandler(userService service.Service) Handler {
     return &UserHandler{userService: userService}
 }
 
-// GetAllUsers returns all users except the current user
+// GetAllUsers godoc
+// @Summary      Get all users
+// @Description  Retrieves all users except the current user
+// @Tags         Users
+// @Accept       json
+// @Produce      json
+// @Success      200  {array}   interface{}  "List of users"
+// @Failure      401  {string}  string       "Unauthorized"
+// @Failure      500  {string}  string       "Internal server error"
+// @Security     Bearer
+// @Router       /users [get]
 func (h *UserHandler) GetAllUsers(w http.ResponseWriter, r *http.Request) {
     // Get current user ID from context
     currentUserID, _ := middleware.GetUserIDFromContext(r.Context())
@@ -43,7 +53,19 @@ func (h *UserHandler) GetAllUsers(w http.ResponseWriter, r *http.Request) {
     json.NewEncoder(w).Encode(filteredUsers)
 }
 
-// GetUserByID returns a specific user by ID
+// GetUserByID godoc
+// @Summary      Get user by ID
+// @Description  Retrieves a specific user by their ID
+// @Tags         Users
+// @Accept       json
+// @Produce      json
+// @Param        id  query     int  true  "User ID"
+// @Success      200  {object}  interface{}  "User details"
+// @Failure      400  {string}  string       "Bad request"
+// @Failure      401  {string}  string       "Unauthorized"
+// @Failure      404  {string}  string       "User not found"
+// @Security     Bearer
+// @Router       /users/id [get]
 func (h *UserHandler) GetUserByID(w http.ResponseWriter, r *http.Request) {
     // Extract user ID from query parameters
     userIDStr := r.URL.Query().Get("id")
@@ -69,7 +91,20 @@ func (h *UserHandler) GetUserByID(w http.ResponseWriter, r *http.Request) {
     json.NewEncoder(w).Encode(user)
 }
 
-// UpdateUserStatus updates a user's online status
+// UpdateUserStatus godoc
+// @Summary      Update user status
+// @Description  Updates the current user's online status
+// @Tags         Users
+// @Accept       json
+// @Produce      json
+// @Param        request  body      object  true  "Status update request"
+// @Param        request.status  body      string  true  "User status (online/offline/away)"
+// @Success      200  {object}  map[string]string  "Success message"
+// @Failure      400  {string}  string            "Bad request"
+// @Failure      401  {string}  string            "Unauthorized"
+// @Failure      500  {string}  string            "Internal server error"
+// @Security     Bearer
+// @Router       /users/status [put]
 func (h *UserHandler) UpdateUserStatus(w http.ResponseWriter, r *http.Request) {
     // Get current user ID from context
     userID, _ := middleware.GetUserIDFromContext(r.Context())

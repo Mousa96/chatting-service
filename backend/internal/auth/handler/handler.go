@@ -18,6 +18,17 @@ type AuthHandler struct {
 	authService service.Service
 }
 
+// Register godoc
+// @Summary      Register a new user
+// @Description  Creates a new user account and returns JWT token
+// @Tags         Auth
+// @Accept       json
+// @Produce      json
+// @Param        request  body      models.CreateUserRequest  true  "User registration details"
+// @Success      200      {object}  models.AuthResponse       "Registration successful"
+// @Failure      400      {string}  string                    "Bad request"
+// @Failure      500      {string}  string                    "Internal server error"
+// @Router       /auth/register [post]
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	var req models.CreateUserRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -41,6 +52,18 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
+// Login godoc
+// @Summary      User login
+// @Description  Authenticates a user and returns JWT token
+// @Tags         Auth
+// @Accept       json
+// @Produce      json
+// @Param        request  body      models.LoginRequest  true  "Login credentials"
+// @Success      200      {object}  models.AuthResponse  "Login successful"
+// @Failure      400      {string}  string               "Bad request"
+// @Failure      401      {string}  string               "Unauthorized"
+// @Failure      500      {string}  string               "Internal server error"
+// @Router       /auth/login [post]
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var req models.LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

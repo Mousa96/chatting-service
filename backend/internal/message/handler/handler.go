@@ -28,6 +28,19 @@ func NewMessageHandler(messageService service.Service) Handler {
 	return &MessageHandler{messageService: messageService}
 }
 
+// SendMessage godoc
+// @Summary      Send a message
+// @Description  Sends a message to another user
+// @Tags         Messages
+// @Accept       json
+// @Produce      json
+// @Param        request  body      models.CreateMessageRequest  true  "Message details"
+// @Success      200      {object}  models.Message               "Message sent"
+// @Failure      400      {string}  string                       "Bad request"
+// @Failure      401      {string}  string                       "Unauthorized"
+// @Failure      500      {string}  string                       "Internal server error"
+// @Security     Bearer
+// @Router       /messages [post]
 func (h *MessageHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 	userID, ok := r.Context().Value(middleware.UserIDKey).(int)
 	if !ok {
@@ -55,6 +68,21 @@ func (h *MessageHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// GetConversation godoc
+// @Summary      Get conversation
+// @Description  Retrieves message history between two users with pagination
+// @Tags         Messages
+// @Accept       json
+// @Produce      json
+// @Param        user_id    query    int  true   "User ID to get conversation with"
+// @Param        page       query    int  false  "Page number"
+// @Param        page_size  query    int  false  "Items per page"
+// @Success      200        {object}  map[string][]models.Message  "Conversation messages"
+// @Failure      400        {string}  string                    "Bad request"
+// @Failure      401        {string}  string                    "Unauthorized"
+// @Failure      500        {string}  string                    "Internal server error"
+// @Security     Bearer
+// @Router       /messages/conversation [get]
 func (h *MessageHandler) GetConversation(w http.ResponseWriter, r *http.Request) {
 	// Extract current user ID from context
 	currentUserID, err := middleware.GetUserIDFromContext(r.Context())
@@ -100,6 +128,19 @@ func (h *MessageHandler) GetConversation(w http.ResponseWriter, r *http.Request)
 	})
 }
 
+// UploadMedia godoc
+// @Summary      Upload media
+// @Description  Uploads a media file
+// @Tags         Messages
+// @Accept       multipart/form-data
+// @Produce      json
+// @Param        file  formData  file    true  "Media file to upload"
+// @Success      200   {object}  map[string]string  "File URL"
+// @Failure      400   {string}  string            "Bad request"
+// @Failure      401   {string}  string            "Unauthorized"
+// @Failure      500   {string}  string            "Internal server error"
+// @Security     Bearer
+// @Router       /messages/upload [post]
 func (h *MessageHandler) UploadMedia(w http.ResponseWriter, r *http.Request) {
 	userID, ok := r.Context().Value(middleware.UserIDKey).(int)
 	if !ok {
@@ -174,6 +215,20 @@ func isAllowedFileType(contentType string) bool {
 	return allowedTypes[contentType]
 }
 
+// BroadcastMessage godoc
+// @Summary      Broadcast a message
+// @Description  Sends a message to multiple users
+// @Tags         Messages
+// @Accept       json
+// @Produce      json
+// @Param        request  body      models.BroadcastMessageRequest  true  "Broadcast message details"
+// @Success      200      {array}   models.Message                 "Messages broadcasted"
+// @Failure      400      {string}  string                         "Bad request"
+// @Failure      401      {string}  string                         "Unauthorized"
+// @Failure      429      {string}  string                         "Rate limit exceeded"
+// @Failure      500      {string}  string                         "Internal server error"
+// @Security     Bearer
+// @Router       /messages/broadcast [post]
 func (h *MessageHandler) BroadcastMessage(w http.ResponseWriter, r *http.Request) {
 	// Get user ID from context
 	userID, ok := r.Context().Value(middleware.UserIDKey).(int)
@@ -203,6 +258,20 @@ func (h *MessageHandler) BroadcastMessage(w http.ResponseWriter, r *http.Request
 	})
 }
 
+// GetMessageHistory godoc
+// @Summary      Get user message history
+// @Description  Retrieves all messages for the current user with pagination
+// @Tags         Messages
+// @Accept       json
+// @Produce      json
+// @Param        page       query     int  false  "Page number (default: 1)"
+// @Param        page_size  query     int  false  "Items per page (default: 10)"
+// @Success      200        {object}  map[string]interface{} "Messages with pagination"
+// @Failure      400        {object}  map[string]string       "Bad request"
+// @Failure      401        {string}  string                 "Unauthorized"
+// @Failure      500        {string}  string                 "Internal server error"
+// @Security     Bearer
+// @Router       /messages/history [get]
 func (h *MessageHandler) GetMessageHistory(w http.ResponseWriter, r *http.Request) {
 	userID, ok := r.Context().Value(middleware.UserIDKey).(int)
 	if !ok {
@@ -258,6 +327,23 @@ func (h *MessageHandler) GetMessageHistory(w http.ResponseWriter, r *http.Reques
 	})
 }
 
+// UpdateMessageStatus godoc
+// @Summary      Update message status
+// @Description  Updates a message's status (read, delivered, etc.)
+// @Tags         Messages
+// @Accept       json
+// @Produce      json
+// @Param        request  body      object  true  "Status update request"
+// @Param        request.message_id  body   int  true  "Message ID to update"
+// @Param        request.status      body   string  true  "New status (read, delivered, etc.)"
+// @Success      200  {object}  map[string]string  "Success response"
+// @Failure      400  {string}  string            "Bad request"
+// @Failure      401  {string}  string            "Unauthorized"
+// @Failure      403  {string}  string            "Forbidden"
+// @Failure      404  {string}  string            "Not found"
+// @Failure      500  {string}  string            "Internal server error"
+// @Security     Bearer
+// @Router       /messages/status [put]
 func (h *MessageHandler) UpdateMessageStatus(w http.ResponseWriter, r *http.Request) {
 	// Get user ID from context
 	userID, ok := r.Context().Value(middleware.UserIDKey).(int)
@@ -319,6 +405,21 @@ func (h *MessageHandler) UpdateMessageStatus(w http.ResponseWriter, r *http.Requ
 	})
 }
 
+// GetConversationPaginated godoc
+// @Summary      Get paginated conversation
+// @Description  Retrieves message history between current user and another user with pagination
+// @Tags         Messages
+// @Accept       json
+// @Produce      json
+// @Param        user_id    query     int  true   "User ID to get conversation with"
+// @Param        page       query     int  false  "Page number (default: 1)"
+// @Param        page_size  query     int  false  "Items per page (default: 10, max: 100)"
+// @Success      200        {object}  object  "Response with messages array and pagination object"
+// @Failure      400        {string}  string  "Bad request"
+// @Failure      401        {string}  string  "Unauthorized" 
+// @Failure      500        {string}  string  "Internal server error"
+// @Security     Bearer
+// @Router       /messages/conversation/paginated [get]
 func (h *MessageHandler) GetConversationPaginated(w http.ResponseWriter, r *http.Request) {
 	// Extract user ID from context using the proper key
 	userID, ok := r.Context().Value(middleware.UserIDKey).(int)

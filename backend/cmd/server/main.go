@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
 
+	_ "github.com/Mousa96/chatting-service/docs" // Import swagger docs
 	authHandler "github.com/Mousa96/chatting-service/internal/auth/handler"
 	authRepository "github.com/Mousa96/chatting-service/internal/auth/repository"
 	authService "github.com/Mousa96/chatting-service/internal/auth/service"

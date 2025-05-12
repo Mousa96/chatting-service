@@ -37,6 +37,17 @@ func NewWebSocketHandler(wsService service.Service, jwtKey []byte) Handler {
 }
 
 // HandleConnection upgrades an HTTP connection to WebSocket and handles the connection
+// HandleConnection godoc
+// @Summary      WebSocket connection
+// @Description  Establishes a WebSocket connection for real-time messaging
+// @Tags         WebSocket
+// @Accept       json
+// @Produce      json
+// @Success      101  {string}  string  "Switching protocols"
+// @Failure      400  {string}  string  "Bad request"
+// @Failure      401  {string}  string  "Unauthorized"
+// @Security     Bearer
+// @Router       /ws [get]
 func (h *WebSocketHandler) HandleConnection(w http.ResponseWriter, r *http.Request) {
 	log.Printf("HandleConnection: Received WebSocket connection request from %s", r.RemoteAddr)
 	
@@ -87,6 +98,19 @@ func maskToken(token string) string {
 }
 
 // GetUserStatus returns the online status of a user
+// GetUserStatus godoc
+// @Summary      Get user status
+// @Description  Retrieves the online status of a specific user
+// @Tags         WebSocket
+// @Accept       json
+// @Produce      json
+// @Param        user_id  query     int  true  "User ID to get status for"
+// @Success      200      {object}  map[string]string  "User status response with status field"
+// @Failure      400      {string}  string             "Bad request"
+// @Failure      401      {string}  string             "Unauthorized"
+// @Failure      404      {string}  string             "User not found"
+// @Security     Bearer
+// @Router       /ws/status [get]
 func (h *WebSocketHandler) GetUserStatus(w http.ResponseWriter, r *http.Request) {
 	// Parse user ID from query parameters
 	userIDStr := r.URL.Query().Get("user_id")
@@ -114,6 +138,17 @@ func (h *WebSocketHandler) GetUserStatus(w http.ResponseWriter, r *http.Request)
 }
 
 // GetConnectedUsers returns a list of all currently connected users
+// GetConnectedUsers godoc
+// @Summary      Get all connected users
+// @Description  Retrieves a list of all currently connected user IDs
+// @Tags         WebSocket
+// @Accept       json
+// @Produce      json
+// @Success      200  {array}   int     "List of connected user IDs"
+// @Failure      401  {string}  string  "Unauthorized"
+// @Failure      500  {string}  string  "Internal server error"
+// @Security     Bearer
+// @Router       /ws/users [get]
 func (h *WebSocketHandler) GetConnectedUsers(w http.ResponseWriter, r *http.Request) {
 	// Check authentication
 	_, err := middleware.GetUserIDFromContext(r.Context())
