@@ -1,9 +1,0 @@
----
-description: 
-globs: 
----
-
-# Your rule content
-Always write tests before writing code. Lets work in a TDD approach.
-- You can @ files here
-- You can use markdown but dont have to
