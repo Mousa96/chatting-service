@@ -17,7 +17,7 @@ const docTemplate = `{
     "paths": {
         "/auth/login": {
             "post": {
-                "description": "Authenticates a user and returns JWT token",
+                "description": "Authenticate user and return JWT token",
                 "consumes": [
                     "application/json"
                 ],
@@ -25,13 +25,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Auth"
+                    "auth"
                 ],
-                "summary": "User login",
+                "summary": "Login user",
                 "parameters": [
                     {
-                        "description": "Login credentials",
-                        "name": "request",
+                        "description": "User login credentials",
+                        "name": "user",
                         "in": "body",
                         "required": true,
                         "schema": {
@@ -53,7 +53,7 @@ const docTemplate = `{
                         }
                     },
                     "401": {
-                        "description": "Unauthorized",
+                        "description": "Invalid credentials",
                         "schema": {
                             "type": "string"
                         }
@@ -69,7 +69,7 @@ const docTemplate = `{
         },
         "/auth/register": {
             "post": {
-                "description": "Creates a new user account and returns JWT token",
+                "description": "Register a new user with username and password",
                 "consumes": [
                     "application/json"
                 ],
@@ -77,13 +77,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Auth"
+                    "auth"
                 ],
                 "summary": "Register a new user",
                 "parameters": [
                     {
                         "description": "User registration details",
-                        "name": "request",
+                        "name": "user",
                         "in": "body",
                         "required": true,
                         "schema": {
@@ -92,7 +92,7 @@ const docTemplate = `{
                     }
                 ],
                 "responses": {
-                    "200": {
+                    "201": {
                         "description": "Registration successful",
                         "schema": {
                             "$ref": "#/definitions/models.AuthResponse"
@@ -100,6 +100,12 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "409": {
+                        "description": "Username already exists",
                         "schema": {
                             "type": "string"
                         }
@@ -120,7 +126,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Sends a message to another user",
+                "description": "Send a message to another user",
                 "consumes": [
                     "application/json"
                 ],
@@ -128,13 +134,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Messages"
+                    "messages"
                 ],
                 "summary": "Send a message",
                 "parameters": [
                     {
                         "description": "Message details",
-                        "name": "request",
+                        "name": "message",
                         "in": "body",
                         "required": true,
                         "schema": {
@@ -144,7 +150,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "Message sent",
+                        "description": "Message sent successfully",
                         "schema": {
                             "$ref": "#/definitions/models.Message"
                         }
@@ -177,7 +183,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Sends a message to multiple users",
+                "description": "Send a message to multiple users",
                 "consumes": [
                     "application/json"
                 ],
@@ -185,13 +191,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Messages"
+                    "messages"
                 ],
                 "summary": "Broadcast a message",
                 "parameters": [
                     {
                         "description": "Broadcast message details",
-                        "name": "request",
+                        "name": "broadcast",
                         "in": "body",
                         "required": true,
                         "schema": {
@@ -201,11 +207,14 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "Messages broadcasted",
+                        "description": "Broadcasted messages",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/models.Message"
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/definitions/models.Message"
+                                }
                             }
                         }
                     },
@@ -243,7 +252,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Retrieves message history between two users with pagination",
+                "description": "Retrieve message history between two users",
                 "consumes": [
                     "application/json"
                 ],
@@ -251,9 +260,9 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Messages"
+                    "messages"
                 ],
-                "summary": "Get conversation",
+                "summary": "Get conversation between users",
                 "parameters": [
                     {
                         "type": "integer",
@@ -316,7 +325,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Retrieves message history between current user and another user with pagination",
+                "description": "Retrieve message history between current user and another user with pagination",
                 "consumes": [
                     "application/json"
                 ],
@@ -324,7 +333,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Messages"
+                    "messages"
                 ],
                 "summary": "Get paginated conversation",
                 "parameters": [
@@ -352,7 +361,18 @@ const docTemplate = `{
                     "200": {
                         "description": "Response with messages array and pagination object",
                         "schema": {
-                            "type": "object"
+                            "type": "object",
+                            "properties": {
+                                "messages": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/models.Message"
+                                    }
+                                },
+                                "pagination": {
+                                    "$ref": "#/definitions/models.Pagination"
+                                }
+                            }
                         }
                     },
                     "400": {
@@ -383,7 +403,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Retrieves all messages for the current user with pagination",
+                "description": "Retrieve all messages for the current user with pagination",
                 "consumes": [
                     "application/json"
                 ],
@@ -391,7 +411,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Messages"
+                    "messages"
                 ],
                 "summary": "Get user message history",
                 "parameters": [
@@ -447,7 +467,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Updates a message's status (read, delivered, etc.)",
+                "description": "Update a message's delivery status (read, delivered, etc.)",
                 "consumes": [
                     "application/json"
                 ],
@@ -455,35 +475,25 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Messages"
+                    "messages"
                 ],
                 "summary": "Update message status",
                 "parameters": [
                     {
                         "description": "Status update request",
-                        "name": "request",
+                        "name": "status",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "type": "object"
-                        }
-                    },
-                    {
-                        "description": "Message ID to update",
-                        "name": "request.message_id",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "type": "integer"
-                        }
-                    },
-                    {
-                        "description": "New status (read, delivered, etc.)",
-                        "name": "request.status",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "type": "string"
+                            "type": "object",
+                            "properties": {
+                                "message_id": {
+                                    "type": "integer"
+                                },
+                                "status": {
+                                    "type": "string"
+                                }
+                            }
                         }
                     }
                 ],
@@ -537,7 +547,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Uploads a media file",
+                "description": "Upload a media file for messages",
                 "consumes": [
                     "multipart/form-data"
                 ],
@@ -545,9 +555,9 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Messages"
+                    "messages"
                 ],
-                "summary": "Upload media",
+                "summary": "Upload media file",
                 "parameters": [
                     {
                         "type": "file",
@@ -559,7 +569,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "File URL",
+                        "description": "File upload response with URL",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -595,7 +605,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Retrieves all users except the current user",
+                "description": "Retrieve all users except the current user",
                 "consumes": [
                     "application/json"
                 ],
@@ -603,7 +613,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Users"
+                    "users"
                 ],
                 "summary": "Get all users",
                 "responses": {
@@ -611,7 +621,9 @@ const docTemplate = `{
                         "description": "List of users",
                         "schema": {
                             "type": "array",
-                            "items": {}
+                            "items": {
+                                "type": "object"
+                            }
                         }
                     },
                     "401": {
@@ -636,7 +648,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Retrieves a specific user by their ID",
+                "description": "Retrieve a specific user by their ID",
                 "consumes": [
                     "application/json"
                 ],
@@ -644,7 +656,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Users"
+                    "users"
                 ],
                 "summary": "Get user by ID",
                 "parameters": [
@@ -659,7 +671,9 @@ const docTemplate = `{
                 "responses": {
                     "200": {
                         "description": "User details",
-                        "schema": {}
+                        "schema": {
+                            "type": "object"
+                        }
                     },
                     "400": {
                         "description": "Bad request",
@@ -689,7 +703,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Updates the current user's online status",
+                "description": "Update the current user's online status",
                 "consumes": [
                     "application/json"
                 ],
@@ -697,26 +711,22 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Users"
+                    "users"
                 ],
                 "summary": "Update user status",
                 "parameters": [
                     {
-                        "description": "Status update request",
-                        "name": "request",
+                        "description": "Status update request - status should be 'online', 'offline', or 'away'",
+                        "name": "status",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "type": "object"
-                        }
-                    },
-                    {
-                        "description": "User status (online/offline/away)",
-                        "name": "request.status",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "type": "string"
+                            "type": "object",
+                            "properties": {
+                                "status": {
+                                    "type": "string"
+                                }
+                            }
                         }
                     }
                 ],
@@ -758,7 +768,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Establishes a WebSocket connection for real-time messaging",
+                "description": "Upgrades HTTP connection to WebSocket for real-time messaging. Supports message types: chat, status, typing",
                 "consumes": [
                     "application/json"
                 ],
@@ -766,125 +776,30 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "WebSocket"
+                    "websocket"
                 ],
-                "summary": "WebSocket connection",
+                "summary": "Establish WebSocket connection",
                 "responses": {
                     "101": {
-                        "description": "Switching protocols",
+                        "description": "Switching Protocols - Connection established",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "200": {
+                        "description": "Message received/sent successfully",
                         "schema": {
                             "type": "string"
                         }
                     },
                     "400": {
-                        "description": "Bad request",
+                        "description": "Bad Request - Invalid message format",
                         "schema": {
                             "type": "string"
                         }
                     },
                     "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "type": "string"
-                        }
-                    }
-                }
-            }
-        },
-        "/ws/status": {
-            "get": {
-                "security": [
-                    {
-                        "Bearer": []
-                    }
-                ],
-                "description": "Retrieves the online status of a specific user",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "WebSocket"
-                ],
-                "summary": "Get user status",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "User ID to get status for",
-                        "name": "user_id",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "User status response with status field",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "404": {
-                        "description": "User not found",
-                        "schema": {
-                            "type": "string"
-                        }
-                    }
-                }
-            }
-        },
-        "/ws/users": {
-            "get": {
-                "security": [
-                    {
-                        "Bearer": []
-                    }
-                ],
-                "description": "Retrieves a list of all currently connected user IDs",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "WebSocket"
-                ],
-                "summary": "Get all connected users",
-                "responses": {
-                    "200": {
-                        "description": "List of connected user IDs",
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "type": "integer"
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal server error",
+                        "description": "Unauthorized - Invalid or missing token",
                         "schema": {
                             "type": "string"
                         }
@@ -910,6 +825,19 @@ const docTemplate = `{
                     "type": "string"
                 }
             }
+        },
+        "internal_message_models.MessageStatus": {
+            "type": "string",
+            "enum": [
+                "sent",
+                "delivered",
+                "read"
+            ],
+            "x-enum-varnames": [
+                "StatusSent",
+                "StatusDelivered",
+                "StatusRead"
+            ]
         },
         "models.AuthResponse": {
             "type": "object",
@@ -1018,25 +946,35 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "status": {
-                    "$ref": "#/definitions/models.MessageStatus"
+                    "$ref": "#/definitions/internal_message_models.MessageStatus"
                 },
                 "updated_at": {
                     "type": "string"
                 }
             }
         },
-        "models.MessageStatus": {
-            "type": "string",
-            "enum": [
-                "sent",
-                "delivered",
-                "read"
-            ],
-            "x-enum-varnames": [
-                "StatusSent",
-                "StatusDelivered",
-                "StatusRead"
-            ]
+        "models.Pagination": {
+            "type": "object",
+            "properties": {
+                "current_page": {
+                    "type": "integer"
+                },
+                "has_next_page": {
+                    "type": "boolean"
+                },
+                "has_prev_page": {
+                    "type": "boolean"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total_items": {
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
         }
     }
 }`

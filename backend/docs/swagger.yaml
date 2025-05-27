@@ -10,6 +10,16 @@ definitions:
       username:
         type: string
     type: object
+  internal_message_models.MessageStatus:
+    enum:
+    - sent
+    - delivered
+    - read
+    type: string
+    x-enum-varnames:
+    - StatusSent
+    - StatusDelivered
+    - StatusRead
   models.AuthResponse:
     properties:
       token:
@@ -82,20 +92,25 @@ definitions:
       sender_id:
         type: integer
       status:
-        $ref: '#/definitions/models.MessageStatus'
+        $ref: '#/definitions/internal_message_models.MessageStatus'
       updated_at:
         type: string
     type: object
-  models.MessageStatus:
-    enum:
-    - sent
-    - delivered
-    - read
-    type: string
-    x-enum-varnames:
-    - StatusSent
-    - StatusDelivered
-    - StatusRead
+  models.Pagination:
+    properties:
+      current_page:
+        type: integer
+      has_next_page:
+        type: boolean
+      has_prev_page:
+        type: boolean
+      page_size:
+        type: integer
+      total_items:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
 info:
   contact: {}
 paths:
@@ -103,11 +118,11 @@ paths:
     post:
       consumes:
       - application/json
-      description: Authenticates a user and returns JWT token
+      description: Authenticate user and return JWT token
       parameters:
-      - description: Login credentials
+      - description: User login credentials
         in: body
-        name: request
+        name: user
         required: true
         schema:
           $ref: '#/definitions/models.LoginRequest'
@@ -123,37 +138,41 @@ paths:
           schema:
             type: string
         "401":
-          description: Unauthorized
+          description: Invalid credentials
           schema:
             type: string
         "500":
           description: Internal server error
           schema:
             type: string
-      summary: User login
+      summary: Login user
       tags:
-      - Auth
+      - auth
   /auth/register:
     post:
       consumes:
       - application/json
-      description: Creates a new user account and returns JWT token
+      description: Register a new user with username and password
       parameters:
       - description: User registration details
         in: body
-        name: request
+        name: user
         required: true
         schema:
           $ref: '#/definitions/models.CreateUserRequest'
       produces:
       - application/json
       responses:
-        "200":
+        "201":
           description: Registration successful
           schema:
             $ref: '#/definitions/models.AuthResponse'
         "400":
           description: Bad request
+          schema:
+            type: string
+        "409":
+          description: Username already exists
           schema:
             type: string
         "500":
@@ -162,16 +181,16 @@ paths:
             type: string
       summary: Register a new user
       tags:
-      - Auth
+      - auth
   /messages:
     post:
       consumes:
       - application/json
-      description: Sends a message to another user
+      description: Send a message to another user
       parameters:
       - description: Message details
         in: body
-        name: request
+        name: message
         required: true
         schema:
           $ref: '#/definitions/models.CreateMessageRequest'
@@ -179,7 +198,7 @@ paths:
       - application/json
       responses:
         "200":
-          description: Message sent
+          description: Message sent successfully
           schema:
             $ref: '#/definitions/models.Message'
         "400":
@@ -198,16 +217,16 @@ paths:
       - Bearer: []
       summary: Send a message
       tags:
-      - Messages
+      - messages
   /messages/broadcast:
     post:
       consumes:
       - application/json
-      description: Sends a message to multiple users
+      description: Send a message to multiple users
       parameters:
       - description: Broadcast message details
         in: body
-        name: request
+        name: broadcast
         required: true
         schema:
           $ref: '#/definitions/models.BroadcastMessageRequest'
@@ -215,11 +234,13 @@ paths:
       - application/json
       responses:
         "200":
-          description: Messages broadcasted
+          description: Broadcasted messages
           schema:
-            items:
-              $ref: '#/definitions/models.Message'
-            type: array
+            additionalProperties:
+              items:
+                $ref: '#/definitions/models.Message'
+              type: array
+            type: object
         "400":
           description: Bad request
           schema:
@@ -240,12 +261,12 @@ paths:
       - Bearer: []
       summary: Broadcast a message
       tags:
-      - Messages
+      - messages
   /messages/conversation:
     get:
       consumes:
       - application/json
-      description: Retrieves message history between two users with pagination
+      description: Retrieve message history between two users
       parameters:
       - description: User ID to get conversation with
         in: query
@@ -285,14 +306,14 @@ paths:
             type: string
       security:
       - Bearer: []
-      summary: Get conversation
+      summary: Get conversation between users
       tags:
-      - Messages
+      - messages
   /messages/conversation/paginated:
     get:
       consumes:
       - application/json
-      description: Retrieves message history between current user and another user
+      description: Retrieve message history between current user and another user
         with pagination
       parameters:
       - description: User ID to get conversation with
@@ -314,6 +335,13 @@ paths:
         "200":
           description: Response with messages array and pagination object
           schema:
+            properties:
+              messages:
+                items:
+                  $ref: '#/definitions/models.Message'
+                type: array
+              pagination:
+                $ref: '#/definitions/models.Pagination'
             type: object
         "400":
           description: Bad request
@@ -331,12 +359,12 @@ paths:
       - Bearer: []
       summary: Get paginated conversation
       tags:
-      - Messages
+      - messages
   /messages/history:
     get:
       consumes:
       - application/json
-      description: Retrieves all messages for the current user with pagination
+      description: Retrieve all messages for the current user with pagination
       parameters:
       - description: 'Page number (default: 1)'
         in: query
@@ -372,31 +400,24 @@ paths:
       - Bearer: []
       summary: Get user message history
       tags:
-      - Messages
+      - messages
   /messages/status:
     put:
       consumes:
       - application/json
-      description: Updates a message's status (read, delivered, etc.)
+      description: Update a message's delivery status (read, delivered, etc.)
       parameters:
       - description: Status update request
         in: body
-        name: request
+        name: status
         required: true
         schema:
+          properties:
+            message_id:
+              type: integer
+            status:
+              type: string
           type: object
-      - description: Message ID to update
-        in: body
-        name: request.message_id
-        required: true
-        schema:
-          type: integer
-      - description: New status (read, delivered, etc.)
-        in: body
-        name: request.status
-        required: true
-        schema:
-          type: string
       produces:
       - application/json
       responses:
@@ -430,12 +451,12 @@ paths:
       - Bearer: []
       summary: Update message status
       tags:
-      - Messages
+      - messages
   /messages/upload:
     post:
       consumes:
       - multipart/form-data
-      description: Uploads a media file
+      description: Upload a media file for messages
       parameters:
       - description: Media file to upload
         in: formData
@@ -446,7 +467,7 @@ paths:
       - application/json
       responses:
         "200":
-          description: File URL
+          description: File upload response with URL
           schema:
             additionalProperties:
               type: string
@@ -465,21 +486,22 @@ paths:
             type: string
       security:
       - Bearer: []
-      summary: Upload media
+      summary: Upload media file
       tags:
-      - Messages
+      - messages
   /users:
     get:
       consumes:
       - application/json
-      description: Retrieves all users except the current user
+      description: Retrieve all users except the current user
       produces:
       - application/json
       responses:
         "200":
           description: List of users
           schema:
-            items: {}
+            items:
+              type: object
             type: array
         "401":
           description: Unauthorized
@@ -493,12 +515,12 @@ paths:
       - Bearer: []
       summary: Get all users
       tags:
-      - Users
+      - users
   /users/id:
     get:
       consumes:
       - application/json
-      description: Retrieves a specific user by their ID
+      description: Retrieve a specific user by their ID
       parameters:
       - description: User ID
         in: query
@@ -510,7 +532,8 @@ paths:
       responses:
         "200":
           description: User details
-          schema: {}
+          schema:
+            type: object
         "400":
           description: Bad request
           schema:
@@ -527,25 +550,23 @@ paths:
       - Bearer: []
       summary: Get user by ID
       tags:
-      - Users
+      - users
   /users/status:
     put:
       consumes:
       - application/json
-      description: Updates the current user's online status
+      description: Update the current user's online status
       parameters:
-      - description: Status update request
+      - description: Status update request - status should be 'online', 'offline',
+          or 'away'
         in: body
-        name: request
+        name: status
         required: true
         schema:
+          properties:
+            status:
+              type: string
           type: object
-      - description: User status (online/offline/away)
-        in: body
-        name: request.status
-        required: true
-        schema:
-          type: string
       produces:
       - application/json
       responses:
@@ -571,94 +592,35 @@ paths:
       - Bearer: []
       summary: Update user status
       tags:
-      - Users
+      - users
   /ws:
     get:
       consumes:
       - application/json
-      description: Establishes a WebSocket connection for real-time messaging
+      description: 'Upgrades HTTP connection to WebSocket for real-time messaging.
+        Supports message types: chat, status, typing'
       produces:
       - application/json
       responses:
         "101":
-          description: Switching protocols
+          description: Switching Protocols - Connection established
+          schema:
+            type: string
+        "200":
+          description: Message received/sent successfully
           schema:
             type: string
         "400":
-          description: Bad request
+          description: Bad Request - Invalid message format
           schema:
             type: string
         "401":
-          description: Unauthorized
+          description: Unauthorized - Invalid or missing token
           schema:
             type: string
       security:
       - Bearer: []
-      summary: WebSocket connection
+      summary: Establish WebSocket connection
       tags:
-      - WebSocket
-  /ws/status:
-    get:
-      consumes:
-      - application/json
-      description: Retrieves the online status of a specific user
-      parameters:
-      - description: User ID to get status for
-        in: query
-        name: user_id
-        required: true
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: User status response with status field
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "400":
-          description: Bad request
-          schema:
-            type: string
-        "401":
-          description: Unauthorized
-          schema:
-            type: string
-        "404":
-          description: User not found
-          schema:
-            type: string
-      security:
-      - Bearer: []
-      summary: Get user status
-      tags:
-      - WebSocket
-  /ws/users:
-    get:
-      consumes:
-      - application/json
-      description: Retrieves a list of all currently connected user IDs
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: List of connected user IDs
-          schema:
-            items:
-              type: integer
-            type: array
-        "401":
-          description: Unauthorized
-          schema:
-            type: string
-        "500":
-          description: Internal server error
-          schema:
-            type: string
-      security:
-      - Bearer: []
-      summary: Get all connected users
-      tags:
-      - WebSocket
+      - websocket
 swagger: "2.0"
