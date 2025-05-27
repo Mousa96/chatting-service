@@ -9,35 +9,40 @@ A real-time chat service built with Go that supports direct messaging, broadcast
 
 ### System Components
 
+```
 ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
-│ Frontend │ │ Backend │ │ Database │
-│ (HTML/JS) │◄──►│ (Go) │◄──►│ (PostgreSQL) │
+│    Frontend     │ │     Backend     │ │    Database     │
+│   (HTML/JS)     │◄──►│      (Go)       │◄──►│  (PostgreSQL)   │
 └─────────────────┘ └─────────────────┘ └─────────────────┘
-│
-▼
-┌─────────────────┐
-│ File Storage │
-│ (Local/S3) │
-└─────────────────┘
+                                │
+                                ▼
+                    ┌─────────────────┐
+                    │  File Storage   │
+                    │  (Local/S3)     │
+                    └─────────────────┘
+```
 
 ### Backend Architecture
 
 The backend follows a clean architecture pattern with clear separation of concerns:
+
+```
 cmd/
-├── server/ # Application entry point
+├── server/                 # Application entry point
 internal/
-├── auth/ # Authentication module
-│ ├── handler/ # HTTP handlers
-│ ├── service/ # Business logic
-│ ├── repository/ # Data access
-│ └── models/ # Data structures
-├── message/ # Messaging module
-├── user/ # User management module
-├── websocket/ # Real-time communication
-├── middleware/ # HTTP middleware (auth, rate limiting)
-├── router/ # Route configuration
-├── db/ # Database utilities
-└── storage/ # File storage abstraction
+├── auth/                   # Authentication module
+│   ├── handler/           # HTTP handlers
+│   ├── service/           # Business logic
+│   ├── repository/        # Data access
+│   └── models/            # Data structures
+├── message/               # Messaging module
+├── user/                  # User management module
+├── websocket/             # Real-time communication
+├── middleware/            # HTTP middleware (auth, rate limiting)
+├── router/                # Route configuration
+├── db/                    # Database utilities
+└── storage/               # File storage abstraction
+```
 
 ### Key Design Principles
 
@@ -46,7 +51,7 @@ internal/
 - **Clean Architecture**: Business logic is separated from infrastructure concerns
 - **Interface-Driven Design**: All major components implement interfaces for loose coupling
 
-## Tech Stack Used
+## Tech Stack
 
 ### Backend
 
@@ -89,28 +94,25 @@ internal/
 
 1. **Clone the repository**
 
-```bash
-git clone https://github.com/Mousa96/chatting-service.git
-cd chatting-service
-```
+   ```bash
+   git clone https://github.com/Mousa96/chatting-service.git
+   cd chatting-service
+   ```
 
 2. **Start the services**
 
-```bash
-docker-compose up --build
-```
+   ```bash
+   docker-compose up --build
+   ```
 
 3. **Access the application**
-
-- Web Interface: http://localhost:8080
-- API Documentation: http://localhost:8080/swagger/
-- Health Check: http://localhost:8080/health
+   - Web Interface: http://localhost:8080
+   - API Documentation: http://localhost:8080/swagger/
+   - Health Check: http://localhost:8080/health
 
 ## API Documentation
 
-Complete API documentation is available via Swagger UI:
-
-- **URL**: http://localhost:8080/swagger/
+Complete API documentation is available via Swagger UI at: http://localhost:8080/swagger/
 
 ## Known Limitations
 
