@@ -3,7 +3,6 @@ package integration
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -27,12 +26,8 @@ func TestFileUpload(t *testing.T) {
 		expectedCode int
 	}{
 		{
-			name: "Valid image upload",
-			fileContent: []byte{
-				0xFF, 0xD8, 0xFF, 0xE0, // JPEG SOI and APP0 marker
-				0x00, 0x10, 0x4A, 0x46, // APP0 length and "JF"
-				0x49, 0x46, 0x00, 0x01, // "IF" and version
-			},
+			name:         "Valid image upload",
+			fileContent:  []byte{0xFF, 0xD8, 0xFF, 0xE0}, // JPEG header
 			filename:     "test.jpg",
 			contentType:  "image/jpeg",
 			expectedCode: http.StatusOK,
@@ -55,20 +50,22 @@ func TestFileUpload(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create multipart form
 			body := &bytes.Buffer{}
 			writer := multipart.NewWriter(body)
-			part, err := writer.CreateFormFile("media", tt.filename)
+
+			part, err := writer.CreateFormFile("file", tt.filename)
 			require.NoError(t, err)
 
 			_, err = part.Write(tt.fileContent)
 			require.NoError(t, err)
-			writer.Close()
 
-			// Create request
+			err = writer.Close()
+			require.NoError(t, err)
+
+			// Use httptest.NewRequest and testServer.ServeHTTP
 			req := httptest.NewRequest(http.MethodPost, "/api/messages/upload", body)
 			req.Header.Set("Content-Type", writer.FormDataContentType())
-			req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", userToken))
+			req.Header.Set("Authorization", "Bearer "+userToken)
 
 			rr := httptest.NewRecorder()
 			testServer.ServeHTTP(rr, req)
@@ -79,12 +76,9 @@ func TestFileUpload(t *testing.T) {
 				var response struct {
 					URL string `json:"url"`
 				}
-				err := json.NewDecoder(rr.Body).Decode(&response)
+				err = json.NewDecoder(rr.Body).Decode(&response)
 				require.NoError(t, err)
 				assert.Contains(t, response.URL, "uploads/")
-				
-				// We only verify the response contains a valid URL
-				// We don't check the file system since we're in a Docker container
 			}
 		})
 	}
@@ -92,7 +86,7 @@ func TestFileUpload(t *testing.T) {
 
 func TestFileServing(t *testing.T) {
 	// Create test uploads directory if it doesn't exist
-	uploadDir := "uploads" // Match the directory used in main.go
+	uploadDir := "/app/uploads" // Match the directory used in Docker
 	err := os.MkdirAll(uploadDir, 0755)
 	require.NoError(t, err)
 	defer os.RemoveAll(uploadDir) // Clean up after test

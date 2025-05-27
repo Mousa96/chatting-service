@@ -9,7 +9,6 @@ import (
 	msgHandler "github.com/Mousa96/chatting-service/internal/message/handler"
 	userHandler "github.com/Mousa96/chatting-service/internal/user/handler"
 	wsHandler "github.com/Mousa96/chatting-service/internal/websocket/handler"
-	httpSwagger "github.com/swaggo/http-swagger"
 )
 
 // Config contains all dependencies needed for the router
@@ -32,27 +31,7 @@ func New(config Config) http.Handler {
 	registerMessageRoutes(mux, config.MessageHandler, config.JWTKey)
 	registerUserRoutes(mux, config.UserHandler, config.JWTKey)
 	registerWebSocketRoutes(mux, config.WebSocketHandler, config.JWTKey)
-	
-	// Apply global middleware using local corsMiddleware
-	handler := corsMiddleware(mux)
-	
+	registerStaticRoutes(mux)
+	handler := mux
 	return handler
-}
-
-// Helper to register health check
-func registerHealthCheck(mux *http.ServeMux) {
-	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
-		w.Write([]byte("OK"))
-	})
-}
-
-// registerSwaggerRoutes registers Swagger documentation routes
-func registerSwaggerRoutes(mux *http.ServeMux) {
-	// Serve Swagger UI
-	mux.Handle("/swagger/", httpSwagger.Handler(
-		httpSwagger.URL("/swagger/doc.json"), // The URL pointing to API definition
-		httpSwagger.DeepLinking(true),
-		httpSwagger.DocExpansion("none"),
-		httpSwagger.DomID("swagger-ui"),
-	))
 }

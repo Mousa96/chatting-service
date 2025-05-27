@@ -71,8 +71,7 @@ func TestMediaUpload(t *testing.T) {
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 	
-	// Create form file
-	part, err := writer.CreateFormFile("media", "test.jpg")
+	part, err := writer.CreateFormFile("file", "test.jpg")
 	assert.NoError(t, err)
 	
 	_, err = part.Write(fileContents)
@@ -80,18 +79,13 @@ func TestMediaUpload(t *testing.T) {
 	err = writer.Close()
 	assert.NoError(t, err)
 
-	// Make request
+	// Use httptest.NewRequest and testServer.ServeHTTP
 	req := httptest.NewRequest(http.MethodPost, "/api/messages/upload", body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", userToken))
 
 	rr := httptest.NewRecorder()
 	testServer.ServeHTTP(rr, req)
-
-	// Debug output
-	t.Logf("Response Status: %d", rr.Code)
-	t.Logf("Response Body: %s", rr.Body.String())
-	t.Logf("Content-Type header: %s", req.Header.Get("Content-Type"))
 
 	assert.Equal(t, http.StatusOK, rr.Code)
 

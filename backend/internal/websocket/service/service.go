@@ -1,562 +1,518 @@
-// Package service implements the WebSocket business logic
 package service
 
 import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"sync"
 	"time"
 
-	messageModels "github.com/Mousa96/chatting-service/internal/message/models"
+	"github.com/Mousa96/chatting-service/internal/message/models"
 	"github.com/Mousa96/chatting-service/internal/message/service"
-	"github.com/Mousa96/chatting-service/internal/websocket/models"
-	"github.com/Mousa96/chatting-service/internal/websocket/repository"
+	"github.com/Mousa96/chatting-service/internal/middleware"
+	websocketModels "github.com/Mousa96/chatting-service/internal/websocket/models"
 	"github.com/gorilla/websocket"
 )
 
+// Add new constant for user status event
 const (
-	// Time allowed to write a message to the peer
-	writeWait = 10 * time.Second
-
-	// Time allowed to read the next pong message from the peer
-	pongWait = 60 * time.Second
-
-	// Send pings to peer with this period. Must be less than pongWait
-	pingPeriod = (pongWait * 9) / 10
-
-	// Maximum message size allowed from peer
-	maxMessageSize = 512 * 1024 // 512KB for text and media metadata
+	EventUserStatus = "user_status"
 )
 
-// WebSocketService provides the implementation of the Service interface
 type WebSocketService struct {
-	repo          repository.Repository
+	upgrader  websocket.Upgrader
+	clients ClientList
+	userClients    map[int]*Client 
+	sync.RWMutex
+	handlers map[string]EventHandler
 	messageService service.Service
-	
-	// Message throttling
-	throttleLimit   int
-	throttleWindow  time.Duration
-	messageCounters map[int][]time.Time
-	throttleMutex   sync.Mutex
+	jwtKey         []byte
+	pendingMessages map[int][]*models.Message // userID -> pending messages
+    pendingMutex    sync.RWMutex
 }
 
-// NewWebSocketService creates a new WebSocketService instance
-func NewWebSocketService(repo repository.Repository, messageService service.Service) Service {
-	return &WebSocketService{
-		repo:          repo,
+type SendResult struct {
+	Success    bool
+	UserOnline bool
+	Error      error
+}
+
+func NewWebSocketService(messageService service.Service, jwtKey []byte) *WebSocketService {
+	m :=&WebSocketService{
+		clients: make(ClientList),
+		handlers: make(map[string]EventHandler),
+		upgrader: websocket.Upgrader{
+			ReadBufferSize: 1024,
+			WriteBufferSize: 1024,
+			CheckOrigin: checkOrigin,
+		},
+		userClients: make(map[int]*Client),
 		messageService: messageService,
+		jwtKey: jwtKey,
+		pendingMessages: make(map[int][]*models.Message),
+
 	}
+	m.setupEventHandlers()
+	return m
 }
 
-// NewWebSocketServiceWithThrottling creates a new WebSocketService instance with throttling
-func NewWebSocketServiceWithThrottling(
-	repo repository.Repository,
-	msgService service.Service,
-	limit int,
-	window time.Duration,
-) *WebSocketService {
-	return &WebSocketService{
-		repo:            repo,
-		messageService:  msgService,
-		throttleLimit:   limit,
-		throttleWindow:  window,
-		messageCounters: make(map[int][]time.Time),
-		throttleMutex:   sync.Mutex{},
-	}
+func (s *WebSocketService) setupEventHandlers() {
+	s.handlers[websocketModels.EventSendMessage] = sendMessage
+	s.handlers[websocketModels.EventBroadcastMessage] = broadcastMessage
+	s.handlers[websocketModels.EventMessageRead] = HandleMessageRead
+	s.handlers[websocketModels.EventGetOnlineUsers] = handleGetOnlineUsers
 }
 
-// HandleConnection manages a new WebSocket connection for a user
-func (s *WebSocketService) HandleConnection(conn *websocket.Conn, userID int) error {
-	client := &models.Client{
-		UserID:     userID,
-		Connection: conn,
-		Send:       make(chan []byte, 256), // Buffer for outbound messages
+func sendMessage(event *websocketModels.Event, c *Client) error {
+	fmt.Println("Sending message:", event)
+	var sendMessageEvent websocketModels.SendMessageEvent
+	if err := json.Unmarshal(event.Payload, &sendMessageEvent); err != nil {
+		return fmt.Errorf("error unmarshalling event: %v", err)
+	}
+	
+	// Save the message to the database
+	savedMessage, err := c.wsService.messageService.SendMessage(c.userID, &models.CreateMessageRequest{
+		ReceiverID: sendMessageEvent.To,
+		Content: sendMessageEvent.Message,
+		MediaURL: sendMessageEvent.MediaURL,
+	})
+	if err != nil {
+		return fmt.Errorf("error sending message: %v", err)
 	}
 
-	// Register client
-	if err := s.repo.AddClient(client); err != nil {
-		return fmt.Errorf("failed to register client: %w", err)
+	messagePayload := websocketModels.MessagePayload{
+		ID:         savedMessage.ID,
+		SenderID:   savedMessage.SenderID,
+		ReceiverID: savedMessage.ReceiverID,
+		Content:    savedMessage.Content,
+		MediaURL:   savedMessage.MediaURL,
+		Status:     websocketModels.StatusSent,
+		CreatedAt:  savedMessage.CreatedAt.Format(time.RFC3339),
+	}
+	
+	messageEvent := websocketModels.Event{
+		Type: websocketModels.EventReceiveMessage,
+		Payload: mustMarshal(messagePayload),
 	}
 
-	// Notify others that user is online
-	statusEvent := &models.Event{
-		Type:      models.EventUserStatus,
-		Timestamp: time.Now(),
-		Payload: models.UserStatusEvent{
-			UserID: userID,
-			Status: models.StatusOnline,
-		},
+	// Send confirmation to sender (this should always succeed since sender is connected)
+	senderResult := c.wsService.sendMessageToClient(c.userID, messageEvent)
+	if senderResult.Error != nil {
+		log.Printf("Failed to send confirmation to sender %d: %v", c.userID, senderResult.Error)
+		// Don't return error here - message was saved, just confirmation failed
 	}
-	s.BroadcastEvent(statusEvent)
 
-	// Start goroutines for pumping messages
-	go s.readPump(client)
-	go s.writePump(client)
+	// Send to recipient
+	recipientResult := c.wsService.sendMessageToClient(sendMessageEvent.To, messageEvent)
+	if recipientResult.Error != nil {
+		log.Printf("Failed to send message to recipient %d: %v", sendMessageEvent.To, recipientResult.Error)
+		// Don't return error - message was saved, recipient just has connection issues
+	} else if !recipientResult.UserOnline {
+		log.Printf("Recipient %d is offline, adding to pending queue", sendMessageEvent.To)
+        // ADD THIS: Add to pending queue when user is offline
+        c.wsService.addToPendingQueue(savedMessage)
+	}
+
+	// Mark as delivered if message was successfully sent
+	if recipientResult.Success {
+		c.wsService.markAsDelivered(savedMessage.ID, sendMessageEvent.To)
+	}
 
 	return nil
 }
 
-// CloseConnection closes a user's WebSocket connection
-func (s *WebSocketService) CloseConnection(userID int) error {
-	client, err := s.repo.GetClient(userID)
+func broadcastMessage(event *websocketModels.Event, c *Client) error {
+	var broadcastMessageEvent websocketModels.BroadcastMessageEvent
+	if err := json.Unmarshal(event.Payload, &broadcastMessageEvent); err != nil {
+		return fmt.Errorf("error unmarshalling event: %v", err)
+	}
+
+	// Save the messages to the database
+	savedMessages, err := c.wsService.messageService.BroadcastMessage(c.userID, &models.BroadcastMessageRequest{
+		ReceiverIDs: broadcastMessageEvent.ReceiverIDs,
+		Content:     broadcastMessageEvent.Message,
+		MediaURL:    broadcastMessageEvent.MediaURL,
+	})
 	if err != nil {
-		return err
+		return fmt.Errorf("error broadcasting message: %v", err)
 	}
 
-	// Close the client's send channel to signal the writePump to exit
-	close(client.Send)
+	successCount := 0
+	offlineCount := 0
+	errorCount := 0
 
-	// Remove client from repository
-	if err := s.repo.RemoveClient(userID); err != nil {
-		return err
-	}
-
-	// Notify others that user is offline
-	statusEvent := &models.Event{
-		Type:      models.EventUserStatus,
-		Timestamp: time.Now(),
-		Payload: models.UserStatusEvent{
-			UserID: userID,
-			Status: models.StatusOffline,
-		},
-	}
-	s.BroadcastEvent(statusEvent)
-
-	return nil
-}
-
-// SendEvent sends an event to a specific user
-func (s *WebSocketService) SendEvent(receiverID int, event *models.Event) error {
-	client, err := s.repo.GetClient(receiverID)
-	if err != nil {
-		return err // User is not connected
-	}
-
-	data, err := json.Marshal(event)
-	if err != nil {
-		return fmt.Errorf("failed to marshal event: %w", err)
-	}
-
-	select {
-	case client.Send <- data:
-		return nil
-	default:
-		// Channel is full or closed - connection might be dead
-		s.CloseConnection(receiverID)
-		return fmt.Errorf("failed to send event, connection closed")
-	}
-}
-
-// BroadcastEvent sends an event to all connected users
-func (s *WebSocketService) BroadcastEvent(event *models.Event) error {
-	data, err := json.Marshal(event)
-	if err != nil {
-		return fmt.Errorf("failed to marshal event: %w", err)
-	}
-
-	clients, err := s.repo.GetAllClients()
-	if err != nil {
-		return fmt.Errorf("failed to get clients: %w", err)
-	}
-
-	for _, client := range clients {
-		// Skip sender if the event has a sender ID
-		if event.SenderID > 0 && client.UserID == event.SenderID {
-			continue
+	// Send individual messages to each recipient
+	for _, message := range savedMessages {
+		messagePayload := websocketModels.MessagePayload{
+			ID:         message.ID,
+			SenderID:   message.SenderID,
+			ReceiverID: message.ReceiverID,
+			Content:    message.Content,
+			MediaURL:   message.MediaURL,
+			Status:     websocketModels.StatusSent,
+			CreatedAt:  message.CreatedAt.Format(time.RFC3339),
 		}
 
-		select {
-		case client.Send <- data:
-		default:
-			// Non-blocking send - if channel is full, close connection
-			s.CloseConnection(client.UserID)
+		messageEvent := websocketModels.Event{
+			Type: websocketModels.EventReceiveMessage,
+			Payload: mustMarshal(messagePayload),
+		}
+
+		// Send to sender (confirmation)
+		senderResult := c.wsService.sendMessageToClient(c.userID, messageEvent)
+		if senderResult.Error != nil {
+			log.Printf("Failed to send broadcast confirmation to sender %d: %v", c.userID, senderResult.Error)
+		}
+
+		// Send to recipient
+		recipientResult := c.wsService.sendMessageToClient(message.ReceiverID, messageEvent)
+		if recipientResult.Error != nil {
+			log.Printf("Failed to send broadcast to user %d: %v", message.ReceiverID, recipientResult.Error)
+			errorCount++
+		} else if !recipientResult.UserOnline {
+			log.Printf("Recipient %d is offline, adding to pending queue", message.ReceiverID)
+			// ADD THIS: Add to pending queue when user is offline
+			c.wsService.addToPendingQueue(message)
+		} else if recipientResult.Success {
+			successCount++
+			// Auto-mark as delivered if recipient received it
+			c.wsService.markAsDelivered(message.ID, message.ReceiverID)
 		}
 	}
-
+	
+	log.Printf("Broadcast from user %d: %d delivered, %d offline, %d errors out of %d total", 
+		c.userID, successCount, offlineCount, errorCount, len(savedMessages))
 	return nil
 }
 
-// NotifyMessageSent notifies a user about a new message
-func (s *WebSocketService) NotifyMessageSent(message *messageModels.Message) error {
-	event := &models.Event{
-		Type:      models.EventMessage,
-		SenderID:  message.SenderID,
-		Timestamp: time.Now(),
-		Message:   message,
+
+func (s *WebSocketService) markAsDelivered(messageID int, recipientID int) {
+	// Update status to delivered in database
+	err := s.messageService.UpdateMessageStatus(messageID, models.StatusDelivered, recipientID)
+	if err != nil {
+		log.Printf("Failed to update message status to delivered: %v", err)
+		return
 	}
 
-	return s.SendEvent(message.ReceiverID, event)
-}
-
-// NotifyStatusChange notifies about message status changes (read/delivered)
-func (s *WebSocketService) NotifyStatusChange(messageID int, status messageModels.MessageStatus) error {
-	// First, get the message to know who to notify
+	// Get the message to find sender
 	message, err := s.messageService.GetMessageByID(messageID)
 	if err != nil {
-		return fmt.Errorf("failed to get message: %w", err)
+		log.Printf("Error getting message: %v", err)
+		return
 	}
 
-	event := &models.Event{
-		Type:      models.EventStatusChange,
-		SenderID:  message.ReceiverID, // The receiver is updating the status
-		Timestamp: time.Now(),
-		Payload: models.StatusUpdateEvent{
+	// Send status change notification
+	statusChangeEvent := websocketModels.Event{
+		Type: websocketModels.EventStatusChange,
+		Payload: mustMarshal(websocketModels.StatusChangeEvent{
 			MessageID: messageID,
-			Status:    status,
-		},
+			Status:    websocketModels.StatusDelivered,
+			UserID:    recipientID,
+		}),
+	}
+	
+	// Notify sender that message was delivered
+	senderResult := s.sendMessageToClient(message.SenderID, statusChangeEvent)
+	if senderResult.Error != nil {
+		log.Printf("Failed to notify sender %d of delivery: %v", message.SenderID, senderResult.Error)
+	} else if !senderResult.UserOnline {
+		log.Printf("Sender %d is offline, delivery notification not sent", message.SenderID)
+	}
+}
+// Add message to pending queue when user is offline
+func (s *WebSocketService) addToPendingQueue(message *models.Message) {
+    s.pendingMutex.Lock()
+    defer s.pendingMutex.Unlock()
+    
+    userID := message.ReceiverID
+    s.pendingMessages[userID] = append(s.pendingMessages[userID], message)
+    log.Printf("Added message %d to pending queue for user %d", message.ID, userID)
+}
+// Process pending messages when user comes online
+func (s *WebSocketService) processPendingMessages(userID int) {
+    s.pendingMutex.Lock()
+    pending := s.pendingMessages[userID]
+    delete(s.pendingMessages, userID) // Clear the queue
+    s.pendingMutex.Unlock()
+    
+    if len(pending) == 0 {
+        return
+    }
+    
+    log.Printf("Processing %d pending messages for user %d", len(pending), userID)
+    
+    for _, message := range pending {
+        messagePayload := websocketModels.MessagePayload{
+            ID:         message.ID,
+            SenderID:   message.SenderID,
+            ReceiverID: message.ReceiverID,
+            Content:    message.Content,
+            MediaURL:   message.MediaURL,
+            Status:     websocketModels.StatusDelivered,
+            CreatedAt:  message.CreatedAt.Format(time.RFC3339),
+        }
+        
+        messageEvent := websocketModels.Event{
+            Type: websocketModels.EventReceiveMessage,
+            Payload: mustMarshal(messagePayload),
+        }
+        
+        // Send to user
+        result := s.sendMessageToClient(userID, messageEvent)
+        if result.Success {
+            // Mark as delivered
+            s.markAsDelivered(message.ID, userID)
+        }
+    }
+}
+// FIXED: Remove duplicate status notifications
+func (s *WebSocketService) MarkMessageAsRead(messageID, userID int) {
+	// Update status in database
+	err := s.messageService.UpdateMessageStatus(messageID, models.StatusRead, userID)
+	if err != nil {
+		log.Printf("Error updating message %d to read: %v", messageID, err)
+		return
 	}
 
-	// Notify the sender of the message about the status change
-	return s.SendEvent(message.SenderID, event)
-}
-
-// NotifyTypingStatus sends typing indicators between users
-func (s *WebSocketService) NotifyTypingStatus(senderID, receiverID int, isTyping bool) error {
-	event := &models.Event{
-		Type:      models.EventTyping,
-		SenderID:  senderID,
-		Timestamp: time.Now(),
-		Payload: models.TypingEvent{
-			UserID:     senderID,
-			IsTyping:   isTyping,
-			ReceiverID: receiverID,
-		},
+	// Get message to find sender
+	message, err := s.messageService.GetMessageByID(messageID)
+	if err != nil {
+		log.Printf("Error getting message: %v", err)
+		return
 	}
 
-	return s.SendEvent(receiverID, event)
+	// Send unified status change event
+	statusChangeEvent := websocketModels.Event{
+		Type: websocketModels.EventStatusChange,
+		Payload: mustMarshal(websocketModels.StatusChangeEvent{
+			MessageID: messageID,
+			Status:    websocketModels.StatusRead,
+			UserID:    userID,
+		}),
+	}
+
+	// FIXED: Only notify sender ONCE, not both sender and reader
+	senderResult := s.sendMessageToClient(message.SenderID, statusChangeEvent)
+	if senderResult.Error != nil {
+		log.Printf("Failed to notify sender of read receipt: %v", senderResult.Error)
+	} else if !senderResult.UserOnline {
+		log.Printf("Sender %d is offline, read receipt not delivered", message.SenderID)
+	}
 }
 
-// UpdateUserStatus changes a user's online status
-func (s *WebSocketService) UpdateUserStatus(userID int, status models.UserStatus) error {
-	if err := s.repo.UpdateUserStatus(userID, status); err != nil {
+func HandleMessageRead(event *websocketModels.Event, c *Client) error {
+	var readPayload struct {
+		MessageID int `json:"message_id"`
+	}
+	
+	if err := json.Unmarshal(event.Payload, &readPayload); err != nil {
 		return err
 	}
 
-	// Notify others about the status change
-	event := &models.Event{
-		Type:      models.EventUserStatus,
-		SenderID:  userID,
-		Timestamp: time.Now(),
-		Payload: models.UserStatusEvent{
-			UserID: userID,
-			Status: status,
-		},
-	}
-
-	return s.BroadcastEvent(event)
+	c.wsService.MarkMessageAsRead(readPayload.MessageID, c.userID)
+	return nil
 }
 
-// GetUserStatus gets a user's current online status
-func (s *WebSocketService) GetUserStatus(userID int) (models.UserStatus, error) {
-	return s.repo.GetUserStatus(userID)
+func handleGetOnlineUsers(event *websocketModels.Event, c *Client) error {
+    onlineUsers := c.wsService.getOnlineUserIDs()
+    
+    // Send current online users to the requesting client
+    for _, userID := range onlineUsers {
+        if userID != c.userID { // Don't send own status
+            statusEvent := websocketModels.Event{
+                Type: websocketModels.EventUserStatus,
+                Payload: mustMarshal(websocketModels.UserStatusEvent{
+                    UserID: userID,
+                    Status: "online",
+                }),
+            }
+            
+            select {
+            case c.egress <- statusEvent:
+            default:
+                // Buffer full, skip
+            }
+        }
+    }
+    
+    return nil
 }
 
-// GetConnectedUsers returns a list of all currently connected users
-func (s *WebSocketService) GetConnectedUsers() ([]int, error) {
-	clients, err := s.repo.GetAllClients()
-	if err != nil {
-		return nil, err
-	}
-
-	userIDs := make([]int, len(clients))
-	for i, client := range clients {
-		userIDs[i] = client.UserID
-	}
-
-	return userIDs, nil
+func (s *WebSocketService) getOnlineUserIDs() []int {
+    s.RLock()
+    defer s.RUnlock()
+    
+    var onlineUsers []int
+    for userID := range s.userClients {
+        onlineUsers = append(onlineUsers, userID)
+    }
+    return onlineUsers
 }
 
-// readPump pumps messages from the WebSocket connection to the hub
-func (s *WebSocketService) readPump(client *models.Client) {
-	defer func() {
-		s.CloseConnection(client.UserID)
-	}()
-
-	client.Connection.SetReadLimit(maxMessageSize)
-	client.Connection.SetReadDeadline(time.Now().Add(pongWait))
-	client.Connection.SetPongHandler(func(string) error {
-		client.Connection.SetReadDeadline(time.Now().Add(pongWait))
+func (s *WebSocketService) routeEvent(event *websocketModels.Event, c *Client) error {
+	if handler, ok := s.handlers[event.Type]; ok {
+		if err := handler(event, c); err != nil {
+			log.Printf("error handling event: %v", err)
+			return err
+		}
 		return nil
-	})
-
-	for {
-		_, message, err := client.Connection.ReadMessage()
-		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, 
-				websocket.CloseGoingAway, 
-				websocket.CloseAbnormalClosure) {
-				log.Printf("websocket error: %v", err)
-			}
-			break
-		}
-
-		// Use the new throttling-aware message handler
-		throttled := s.handleRawMessage(client.UserID, message)
-		if throttled {
-			// If the message was throttled, we've already sent an error response
-			continue
-		}
-	}
-}
-
-// writePump pumps messages from the hub to the WebSocket connection
-func (s *WebSocketService) writePump(client *models.Client) {
-	ticker := time.NewTicker(pingPeriod)
-	defer func() {
-		ticker.Stop()
-		client.Connection.Close()
-	}()
-
-	for {
-		select {
-		case message, ok := <-client.Send:
-			client.Connection.SetWriteDeadline(time.Now().Add(writeWait))
-			if !ok {
-				// The hub closed the channel.
-				client.Connection.WriteMessage(websocket.CloseMessage, []byte{})
-				return
-			}
-
-			w, err := client.Connection.NextWriter(websocket.TextMessage)
-			if err != nil {
-				return
-			}
-			w.Write(message)
-
-			// Add queued messages to the current websocket message
-			n := len(client.Send)
-			for i := 0; i < n; i++ {
-				w.Write([]byte{'\n'})
-				w.Write(<-client.Send)
-			}
-
-			if err := w.Close(); err != nil {
-				return
-			}
-		case <-ticker.C:
-			client.Connection.SetWriteDeadline(time.Now().Add(writeWait))
-			if err := client.Connection.WriteMessage(websocket.PingMessage, nil); err != nil {
-				return
-			}
-		}
-	}
-}
-
-// handleMessageEvent processes message events from clients
-func (s *WebSocketService) handleMessageEvent(senderID int, event *models.Event) {
-	// Extract the message from the event
-	if event.Message == nil {
-		log.Println("received message event with no message")
-		return
-	}
-
-	// Save to database via message service
-	createReq := &messageModels.CreateMessageRequest{
-		ReceiverID: event.Message.ReceiverID,
-		Content:    event.Message.Content,
-		MediaURL:   event.Message.MediaURL,
-	}
-	savedMsg, err := s.messageService.SendMessage(senderID, createReq)
-	if err != nil {
-		log.Printf("failed to save message: %v", err)
-		return
-	}
-
-	// Update the event with the saved message (which now has an ID)
-	event.Message = savedMsg
-
-	// Forward the message to the recipient
-	event.SenderID = senderID
-	if event.Message.ReceiverID > 0 {
-		s.SendEvent(event.Message.ReceiverID, event)
-	}
-}
-
-// handleTypingEvent processes typing events from clients
-func (s *WebSocketService) handleTypingEvent(senderID int, event *models.Event) {
-	typingEvent, ok := event.Payload.(map[string]interface{})
-	if !ok {
-		log.Println("invalid typing event payload")
-		return
-	}
-
-	// Extract receiver ID and isTyping from the payload
-	receiverID, ok := typingEvent["receiver_id"].(float64)
-	if !ok {
-		log.Println("invalid receiver_id in typing event")
-		return
-	}
-
-	isTyping, ok := typingEvent["is_typing"].(bool)
-	if !ok {
-		log.Println("invalid is_typing in typing event")
-		return
-	}
-
-	// Forward the typing event to the recipient
-	s.NotifyTypingStatus(senderID, int(receiverID), isTyping)
-}
-
-// handleStatusChangeEvent processes message status change events
-func (s *WebSocketService) handleStatusChangeEvent(senderID int, event *models.Event) {
-	statusEvent, ok := event.Payload.(map[string]interface{})
-	if !ok {
-		log.Println("invalid status change event payload")
-		return
-	}
-
-	// Extract message ID and status from the payload
-	messageID, ok := statusEvent["message_id"].(float64)
-	if !ok {
-		log.Println("invalid message_id in status change event")
-		return
-	}
-
-	statusStr, ok := statusEvent["status"].(string)
-	if !ok {
-		log.Println("invalid status in status change event")
-		return
-	}
-
-	// Update the message status in the database
-	status := messageModels.MessageStatus(statusStr)
-	if !status.IsValid() {
-		log.Println("invalid message status:", statusStr)
-		return
-	}
-
-	// This would ideally call the existing message service
-	log.Printf("Updating message %d status to %s", int(messageID), status)
-}
-
-// handleBroadcastEvent processes broadcast events from clients
-func (s *WebSocketService) handleBroadcastEvent(senderID int, event *models.Event) {
-	// Extract the message from the event
-	if event.Message == nil {
-		log.Println("received broadcast event with no message")
-		return
-	}
-	
-	// Extract receiver IDs from the payload
-	var receiverIDs []int
-	
-	// Check if receiver_ids is in the Message struct
-	if event.Message.ReceiverIDs != nil && len(event.Message.ReceiverIDs) > 0 {
-		receiverIDs = event.Message.ReceiverIDs
 	} else {
-		log.Println("broadcast event has no valid recipients")
-		return
+		log.Printf("no handler for event: %v", event)
+		return fmt.Errorf("no handler for event: %v", event)
 	}
-	
-	// Create broadcast request
-	broadcastReq := &messageModels.BroadcastMessageRequest{
-		ReceiverIDs: receiverIDs,
-		Content:     event.Message.Content,
-		MediaURL:    event.Message.MediaURL,
-	}
-	
-	// Save messages to database
-	messages, err := s.messageService.BroadcastMessage(senderID, broadcastReq)
+}
+
+func (s *WebSocketService) ServeWs(w http.ResponseWriter, r *http.Request) {
+	// get the token from the query string
+	token := r.URL.Query().Get("token")
+    if token == "" {
+        http.Error(w, "Missing authentication token", http.StatusUnauthorized)
+        return
+    }
+	// validate the token
+	userID, err := middleware.ValidateTokenAndGetUserID(token, string(s.jwtKey))
 	if err != nil {
-		log.Printf("failed to save broadcast messages: %v", err)
+		http.Error(w, "Invalid token", http.StatusUnauthorized)
 		return
 	}
-	
-	// Send to each recipient
-	for _, msg := range messages {
-		broadcastEvent := &models.Event{
-			Type:      models.EventMessage, // Recipients get it as a normal message
-			SenderID:  senderID,
-			Timestamp: time.Now(),
-			Message:   msg,
-		}
-		
-		// Only send to connected users
-		s.SendEvent(msg.ReceiverID, broadcastEvent)
+	// upgrade the connection to a websocket
+	conn, err := s.upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Println("Error during connection upgrade:", err)
+		return
 	}
+
+	client := NewClient(conn, s, userID)
+	s.addClient(client)
+
+	// start the client read and write processes
+	go client.readMessages()
+	go client.writeMessages()
 }
 
-// isThrottled checks if a message should be throttled
-func (s *WebSocketService) isThrottled(userID int) bool {
-	s.throttleMutex.Lock()
-	defer s.throttleMutex.Unlock()
-	
-	// If no limit is set, don't throttle
-	if s.throttleLimit <= 0 {
-		return false
-	}
-	
-	now := time.Now()
-	
-	// Get the user's message timestamps
-	timestamps, exists := s.messageCounters[userID]
-	if !exists {
-		// First message from this user
-		s.messageCounters[userID] = []time.Time{now}
-		return false
-	}
-	
-	// Filter out timestamps outside the window
-	validTimestamps := []time.Time{}
-	for _, ts := range timestamps {
-		if now.Sub(ts) <= s.throttleWindow {
-			validTimestamps = append(validTimestamps, ts)
-		}
-	}
-	
-	// Check if the user is over the limit
-	if len(validTimestamps) >= s.throttleLimit {
+func (s *WebSocketService) addClient(client *Client) {
+    s.Lock()
+    defer s.Unlock()
+
+    // Close existing connection if user reconnects
+    if existingClient, exists := s.userClients[client.userID]; exists {
+        existingClient.connection.Close()
+        delete(s.clients, existingClient)
+    }
+
+    s.clients[client] = true
+    s.userClients[client.userID] = client
+    
+    // Broadcast online status after adding client
+    go s.broadcastUserStatus(client.userID, "online")
+    
+    // Send current online users to the new client
+    go func() {
+        onlineUsers := s.getOnlineUserIDs()
+        for _, userID := range onlineUsers {
+            if userID != client.userID {
+                statusEvent := websocketModels.Event{
+                    Type: websocketModels.EventUserStatus,
+                    Payload: mustMarshal(websocketModels.UserStatusEvent{
+                        UserID: userID,
+                        Status: "online",
+                    }),
+                }
+                client.egress <- statusEvent
+            }
+        }
+    }()
+
+    // Process pending messages for user who just came online
+    go s.processPendingMessages(client.userID)
+}
+
+func (s *WebSocketService) removeClient(client *Client) {
+    s.Lock()
+    defer s.Unlock()
+
+    if _, ok := s.clients[client]; ok {
+        client.connection.Close()
+        delete(s.clients, client)
+        delete(s.userClients, client.userID)
+        
+        // Broadcast offline status after removing client
+        go s.broadcastUserStatus(client.userID, "offline")
+    }
+}
+
+func checkOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	log.Println("origin:", origin)
+	switch origin {
+	case "http://localhost:8080":
 		return true
-	}
-	
-	// Add the current timestamp and update
-	s.messageCounters[userID] = append(validTimestamps, now)
-	return false // Message was not throttled
-}
-
-// handleRawMessage processes a raw websocket message with throttling
-func (s *WebSocketService) handleRawMessage(userID int, message []byte) bool {
-	// Check if the user is being throttled
-	if s.isThrottled(userID) {
-		// User is sending too many messages
-		log.Printf("User %d is being throttled - too many messages", userID)
-		
-		// Send a throttling message to the user
-		errorEvent := &models.Event{
-			Type:    models.EventError,
-			Message: &messageModels.Message{Content: "You are sending messages too quickly. Please slow down."},
-		}
-		
-		errorJSON, _ := json.Marshal(errorEvent)
-		client, err := s.repo.GetClient(userID)
-		if err == nil && client != nil {
-			client.Send <- errorJSON
-		}
-		
-		return true // Message was throttled
-	}
-	
-	// Parse the message
-	var event models.Event
-	if err := json.Unmarshal(message, &event); err != nil {
-		log.Printf("Error parsing WebSocket message: %v", err)
+	default:
 		return false
 	}
-	
-	// Handle the event based on its type
-	switch event.Type {
-	case models.EventMessage:
-		s.handleMessageEvent(userID, &event)
-	case models.EventTyping:
-		s.handleTypingEvent(userID, &event)
-	case models.EventStatusChange:
-		s.handleStatusChangeEvent(userID, &event)
-	case models.EventBroadcast:
-		s.handleBroadcastEvent(userID, &event)
-	default:
-		log.Printf("Unknown event type: %s", event.Type)
+}
+
+func mustMarshal(v interface{}) json.RawMessage {
+	data, err := json.Marshal(v)
+	if err != nil {
+		log.Printf("Error marshaling payload: %v", err)
+        return json.RawMessage(`{"error": "marshal failed"}`)
+	}
+	return json.RawMessage(data)
+}
+
+func (s *WebSocketService) sendMessageToClient(userID int, event websocketModels.Event) SendResult {
+	s.RLock()
+	client, ok := s.userClients[userID]
+	s.RUnlock()
+	if !ok {
+		// User is offline - this is normal, not an error
+		log.Printf("User %d is offline, message not delivered via WebSocket", userID)
+		return SendResult{
+			Success:    false,
+			UserOnline: false,
+			Error:      nil, // No error - user is just offline
+		}
 	}
 	
-	return false // Message was not throttled
+	// Try to send the message
+	select {
+	case client.egress <- event:
+		return SendResult{
+			Success:    true,
+			UserOnline: true,
+			Error:      nil,
+		}
+	default:
+		// Client's message buffer is full - this is an actual error
+		log.Printf("Message buffer full for user %d, closing connection", userID)
+		return SendResult{
+			Success:    false,
+			UserOnline: true, // They were online but connection is problematic
+			Error:      fmt.Errorf("client message buffer is full"),
+		}
+	}
+}
+
+func (s *WebSocketService) broadcastUserStatus(userID int, status string) {
+    statusEvent := websocketModels.Event{
+        Type: websocketModels.EventUserStatus,
+        Payload: mustMarshal(websocketModels.UserStatusEvent{
+            UserID: userID,
+            Status: status,
+        }),
+    }
+    
+    s.RLock()
+    for client := range s.clients {
+        if client.userID != userID {
+            select {
+            case client.egress <- statusEvent:
+            default:
+                log.Printf("Failed to send status update to user %d", client.userID)
+            }
+        }
+    }
+    s.RUnlock()
 }

@@ -1,0 +1,23 @@
+version: "3.8"
+
+services:
+  integration-tests:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    depends_on:
+      - test-db
+    environment:
+      - GO_ENV=test
+    volumes:
+      - .:/app
+
+  test-db:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=chat_service_test
+    command: postgres -N 50
+    tmpfs:
+      - /var/lib/postgresql/data

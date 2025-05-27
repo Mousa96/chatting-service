@@ -84,14 +84,12 @@ func (h *MessageHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 // @Security     Bearer
 // @Router       /messages/conversation [get]
 func (h *MessageHandler) GetConversation(w http.ResponseWriter, r *http.Request) {
-	// Extract current user ID from context
 	currentUserID, err := middleware.GetUserIDFromContext(r.Context())
 	if err != nil {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 	
-	// Extract other user ID from query parameter
 	otherUserIDStr := r.URL.Query().Get("user_id")
 	if otherUserIDStr == "" {
 		http.Error(w, "Missing user_id parameter", http.StatusBadRequest)
@@ -106,26 +104,32 @@ func (h *MessageHandler) GetConversation(w http.ResponseWriter, r *http.Request)
 	
 	messages, err := h.messageService.GetConversation(currentUserID, otherUserID)
 	
-	// Return 200 with empty array instead of error if no messages found
-	if err != nil && (strings.Contains(err.Error(), "no conversation") || 
-					  strings.Contains(err.Error(), "not found")) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		// Return object with messages field - not direct array
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"messages": []models.Message{},
-		})
-		return
-	} else if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	// Set content type for all responses
+	w.Header().Set("Content-Type", "application/json")
+	
+	if err != nil {
+		if strings.Contains(err.Error(), "no conversation") {
+			// No messages is not an error condition, return empty array
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"messages": []models.Message{},
+			})
+			return
+		}
+		
+		// For actual errors, return appropriate error status
+		log.Printf("Error getting conversation: %v", err)
+		http.Error(w, "Failed to retrieve conversation", http.StatusInternalServerError)
 		return
 	}
 	
-	// Return messages in object with messages field - not direct array
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	// Return messages in consistent format
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
 		"messages": messages,
-	})
+	}); err != nil {
+		log.Printf("Error encoding response: %v", err)
+		http.Error(w, "Error encoding response", http.StatusInternalServerError)
+		return
+	}
 }
 
 // UploadMedia godoc
@@ -156,7 +160,7 @@ func (h *MessageHandler) UploadMedia(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get file from form
-	file, header, err := r.FormFile("media")
+	file, header, err := r.FormFile("file")
 	if err != nil {
 		log.Printf("Failed to get form file: %v", err)
 		http.Error(w, "invalid file", http.StatusBadRequest)

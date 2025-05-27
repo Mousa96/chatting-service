@@ -37,7 +37,7 @@ func (r *SQLMessageRepository) GetConversation(userID1, userID2 int) ([]models.M
         FROM messages
         WHERE (sender_id = $1 AND receiver_id = $2)
            OR (sender_id = $2 AND receiver_id = $1)
-        ORDER BY created_at DESC`
+        ORDER BY created_at ASC`
 
 	rows, err := r.db.Query(query, userID1, userID2)
 	if err != nil {

@@ -38,6 +38,7 @@ func (s *MessageService) SendMessage(senderID int, req *models.CreateMessageRequ
 		Content:    req.Content,
 		MediaURL:   req.MediaURL,
 		CreatedAt:  time.Now(),
+		Status:     models.StatusSent,
 	}
 
 	if err := s.messageRepo.Create(msg); err != nil {

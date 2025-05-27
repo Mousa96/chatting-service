@@ -3,19 +3,16 @@ package service
 import (
 	"github.com/Mousa96/chatting-service/internal/user/models"
 	"github.com/Mousa96/chatting-service/internal/user/repository"
-	wsModels "github.com/Mousa96/chatting-service/internal/websocket/models"
-	websocketService "github.com/Mousa96/chatting-service/internal/websocket/service"
 )
 
 // UserService implements Service interface
 type UserService struct {
 	repo       repository.Repository
-	wsService  websocketService.Service
 }
 
 // NewUserService creates a new UserService
-func NewUserService(repo repository.Repository, wsService websocketService.Service) Service {
-	return &UserService{repo: repo, wsService: wsService}
+func NewUserService(repo repository.Repository) Service {
+	return &UserService{repo: repo}
 }
 
 // GetAllUsers retrieves all users
@@ -26,23 +23,23 @@ func (s *UserService) GetAllUsers() ([]models.User, error) {
 	}
 	
 	// Enhance with online status from WebSocket service if available
-	if s.wsService != nil {
-		connectedUsers, err := s.wsService.GetConnectedUsers()
-		if err == nil {
-			// Create a map for faster lookup
-			onlineMap := make(map[int]bool)
-			for _, id := range connectedUsers {
-				onlineMap[id] = true
-			}
+	// if s.wsService != nil {
+	// 	connectedUsers, err := s.wsService.GetConnectedUsers()
+	// 	if err == nil {
+	// 		// Create a map for faster lookup
+	// 		onlineMap := make(map[int]bool)
+	// 		for _, id := range connectedUsers {
+	// 			onlineMap[id] = true
+	// 		}
 			
-			// Update user status
-			for i := range users {
-				if onlineMap[users[i].ID] {
-					users[i].Status = "online"
-				}
-			}
-		}
-	}
+	// 		// Update user status
+	// 		for i := range users {
+	// 			if onlineMap[users[i].ID] {
+	// 				users[i].Status = "online"
+	// 			}
+	// 		}
+	// 	}
+	// }
 	
 	return users, nil
 }
@@ -58,13 +55,13 @@ func (s *UserService) GetUserByID(id int) (*models.User, error) {
 	user.Status = "offline"
 	
 	// Check if user is online
-	if s.wsService != nil {
-		status, err := s.wsService.GetUserStatus(id)
-		// Only update if we get a valid online status
-		if err == nil && status == wsModels.StatusOnline {
-			user.Status = "online"
-		}
-	}
+	// if s.wsService != nil {
+	// 	status, err := s.wsService.GetUserStatus(id)
+	// 	// Only update if we get a valid online status
+	// 	if err == nil && status == wsModels.StatusOnline {
+	// 		user.Status = "online"
+	// 	}
+	// }
 	
 	return user, nil
 }
@@ -87,22 +84,22 @@ func (s *UserService) UpdateUserStatus(userID int, status string) error {
 	}
 	
 	// If WebSocket service is available, update status there too
-	if s.wsService != nil {
-		// Convert string to appropriate WebSocket status type
-		var wsStatus wsModels.UserStatus
-		switch status {
-		case "online":
-			wsStatus = wsModels.StatusOnline
-		case "offline":
-			wsStatus = wsModels.StatusOffline
-		default:
-			wsStatus = wsModels.StatusAway
-		}
+	// if s.wsService != nil {
+	// 	// Convert string to appropriate WebSocket status type
+	// 	var wsStatus wsModels.UserStatus
+	// 	switch status {
+	// 	case "online":
+	// 		wsStatus = wsModels.StatusOnline
+	// 	case "offline":
+	// 		wsStatus = wsModels.StatusOffline
+	// 	default:
+	// 		wsStatus = wsModels.StatusAway
+	// 	}
 		
-		if err := s.wsService.UpdateUserStatus(userID, wsStatus); err != nil {
-			return err
-		}
-	}
+	// 	if err := s.wsService.UpdateUserStatus(userID, wsStatus); err != nil {
+	// 		return err
+	// 	}
+	// }
 	
 	return nil
 } 

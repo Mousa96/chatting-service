@@ -3,6 +3,7 @@ package middleware
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -22,16 +23,35 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
+// ErrorResponse is a standardized JSON error response
+type ErrorResponse struct {
+	Error string `json:"error"`
+}
+
+// sendJSONError sends a standardized JSON error response
+func sendJSONError(w http.ResponseWriter, message string, statusCode int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	json.NewEncoder(w).Encode(ErrorResponse{Error: message})
+}
+
 // AuthMiddleware creates a new authentication middleware
 func AuthMiddleware(jwtKey []byte) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authHeader := r.Header.Get("Authorization")
-			log.Printf("Auth header: %s", authHeader) // Debug
+			//log.Printf("Auth header: %s", authHeader) // Debug
+
+			// Check if this is an API request to determine response format
+			isAPIRequest := strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/ws/")
 
 			if authHeader == "" {
 				log.Printf("No auth header") // Debug
-				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				if isAPIRequest {
+					sendJSONError(w, "Authorization header required", http.StatusUnauthorized)
+				} else {
+					http.Error(w, "unauthorized", http.StatusUnauthorized)
+				}
 				return
 			}
 
@@ -40,7 +60,11 @@ func AuthMiddleware(jwtKey []byte) func(http.Handler) http.Handler {
 			parts := strings.Split(authHeader, " ")
 			if len(parts) != 2 || parts[0] != "Bearer" {
 				log.Printf("Invalid auth header format: %v", parts) // Debug
-				http.Error(w, "invalid authorization header", http.StatusUnauthorized)
+				if isAPIRequest {
+					sendJSONError(w, "Invalid authorization header format", http.StatusUnauthorized)
+				} else {
+					http.Error(w, "invalid authorization header", http.StatusUnauthorized)
+				}
 				return
 			}
 
@@ -57,18 +81,26 @@ func AuthMiddleware(jwtKey []byte) func(http.Handler) http.Handler {
 			})
 
 			if err != nil {
-				log.Printf("Token validation error: %v", err) // Debug
-				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				//log.Printf("Token validation error: %v", err) // Debug
+				if isAPIRequest {
+					sendJSONError(w, "Invalid or expired token", http.StatusUnauthorized)
+				} else {
+					http.Error(w, "unauthorized", http.StatusUnauthorized)
+				}
 				return
 			}
 
 			if !token.Valid {
 				log.Printf("Token invalid") // Debug
-				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				if isAPIRequest {
+					sendJSONError(w, "Invalid token", http.StatusUnauthorized)
+				} else {
+					http.Error(w, "unauthorized", http.StatusUnauthorized)
+				}
 				return
 			}
 
-			log.Printf("Token validated successfully, claims: %+v", claims) // Debug
+			//log.Printf("Token validated successfully, claims: %+v", claims) // Debug
 			// Add user ID to request context
 			userID := int(claims["user_id"].(float64))
 			ctx := context.WithValue(r.Context(), UserIDKey, userID)
@@ -77,7 +109,7 @@ func AuthMiddleware(jwtKey []byte) func(http.Handler) http.Handler {
 	}
 }
 
-// Add this function to your middleware package
+// GetUserIDFromContext extracts user ID from context
 func GetUserIDFromContext(ctx context.Context) (int, error) {
 	userID, ok := ctx.Value(UserIDKey).(int)
 	if !ok {

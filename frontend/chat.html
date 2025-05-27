@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Chat App</title>
+    <link rel="stylesheet" href="assets/css/style.css" />
+  </head>
+  <body>
+    <div class="chat-container">
+      <aside class="sidebar">
+        <div class="user-info">
+          <span id="current-user">Loading...</span>
+          <button id="logout-btn" class="btn-small">Logout</button>
+        </div>
+
+        <div class="user-list-header">
+          <h3>Users</h3>
+          <span class="online-count" id="online-count">0 online</span>
+        </div>
+
+        <ul class="user-list" id="user-list">
+          <!-- User list will be dynamically populated -->
+        </ul>
+
+        <div class="broadcast-section">
+          <h3>Broadcast Message</h3>
+
+          <!-- Selected count indicator -->
+          <div class="selected-count" id="selected-count">0 users selected</div>
+
+          <!-- Selection controls -->
+          <div class="selection-controls">
+            <button class="selection-btn" id="select-all-btn">
+              Select All
+            </button>
+            <button class="selection-btn" id="select-none-btn">
+              Select None
+            </button>
+          </div>
+
+          <!-- Users list with checkboxes -->
+          <div class="broadcast-users-container" id="broadcast-users-container">
+            <!-- Users will be populated here -->
+          </div>
+
+          <!-- Message input -->
+          <textarea
+            id="broadcast-message"
+            placeholder="Type broadcast message..."
+          ></textarea>
+
+          <!-- Actions -->
+          <div class="broadcast-actions">
+            <div class="broadcast-file-section">
+              <input type="file" id="broadcast-file" class="file-input" />
+              <label for="broadcast-file" class="file-label">📎 Add File</label>
+            </div>
+            <button id="send-broadcast" class="btn-primary">
+              Send Broadcast
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      <main class="chat-main">
+        <div class="chat-header">
+          <h2 id="chat-title">Select a user to start chatting</h2>
+          <div class="user-status" id="selected-user-status">
+            <span class="status-dot online"></span>
+            <span class="status-text">Online</span>
+          </div>
+        </div>
+
+        <div class="messages" id="messages-container">
+          <!-- Messages will be loaded here -->
+          <div class="no-messages">Select a user to start chatting</div>
+        </div>
+
+        <div class="message-input">
+          <form id="message-form">
+            <input type="file" id="media-upload" class="file-input" />
+            <label for="media-upload" class="file-label">📎</label>
+            <textarea
+              id="message-text"
+              placeholder="Type a message..."
+              disabled
+            ></textarea>
+            <button type="submit" id="send-button" disabled>Send</button>
+          </form>
+          <div id="media-preview" class="media-preview hidden"></div>
+        </div>
+      </main>
+    </div>
+
+    <script src="assets/js/event.js"></script>
+    <script src="assets/js/chat.js"></script>
+  </body>
+</html>
